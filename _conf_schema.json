@@ -9,6 +9,11 @@
     "description": "回复功能总开关",
     "default": false
   },
+  "debug": {
+    "type": "bool",
+    "description": "调试日志：在 AstrBot 日志中打印每条群消息的记录与回复决策",
+    "default": false
+  },
   "interval": {
     "type": "int",
     "description": "词库链间隔（秒）：两条消息间隔小于该值时，前一条作为问、后一条作为答",

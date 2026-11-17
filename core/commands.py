@@ -174,6 +174,9 @@ class CommandService:
             "回复功能：" + ("开启" if self.config.as_bool("reply") else "关闭")
         )
         lines.append(
+            "调试日志：" + ("开启" if self.config.as_bool("debug") else "关闭")
+        )
+        lines.append(
             "全局模式：" + ("开启" if self.config.as_int("sendmode") else "关闭")
         )
         lines.append(

@@ -358,10 +358,22 @@ class ChatLearningPlugin(Star):
                     self.sessions.pop(session_key, None)
                 return [Delivery(self._text_chain(line)) for line in outputs if line]
 
-        await self.learning.on_group_message(
+        outcome = await self.learning.on_group_message(
             group_id, content, raw_types, sender_id, timestamp
         )
-        return await self._maybe_reply(event, group_id, sender_id, content)
+        deliveries, reply_trace = await self._maybe_reply(
+            event, group_id, sender_id, content
+        )
+        if self.config.as_bool("debug"):
+            logger.info(
+                "[ChatLearning:debug] 群%s 用户%s 消息=%s | 记录：%s | 回复：%s",
+                group_id,
+                sender_id,
+                content_preview(content, 60),
+                outcome.describe(),
+                reply_trace,
+            )
+        return deliveries
 
     async def _handle_private(
         self,
@@ -388,38 +400,44 @@ class ChatLearningPlugin(Star):
         group_id: str,
         sender_id: str,
         content: list[dict],
-    ) -> list[Delivery]:
+    ) -> tuple[list[Delivery], str]:
         if not content:
-            return []
+            return [], "无内容"
         if not self.config.as_bool("reply"):
-            return []
+            return [], "回复功能已关闭"
         if not self.config.has_group("reply", group_id):
-            return []
+            return [], "群未加入回复列表"
         now = time.time()
         cooldown = self.config.as_int("replycd")
         if cooldown > 0 and now - self._cooldown.get(group_id, 0.0) < cooldown:
-            logger.debug("ChatLearning: 群%s 处于回复冷却中", group_id)
-            return []
+            remaining = cooldown - (now - self._cooldown.get(group_id, 0.0))
+            return [], f"冷却中（剩余 {remaining:.1f}s）"
 
         at_bot = self.codec.detect_at_bot(event)
         if at_bot and not self.config.as_bool("atreply"):
-            return []
+            return [], "@bot 且 atreply 已关闭"
 
         plan = self.reply_engine.lookup(group_id, content)
         if plan is None:
-            return []
+            return [], "未命中词库"
+        question_preview = (
+            content_preview(plan.question.content, 50)
+            if plan.question is not None
+            else content_preview(content, 50)
+        )
+        answer_preview = content_preview(plan.answer.content, 50)
+        chance = self.config.reply_chance_for(group_id)
         if not at_bot and not self.reply_engine.roll_reply_chance(group_id):
-            return []
+            return [], f"命中「{question_preview}」，概率 {chance}% 未通过"
 
         rendered = self.reply_engine.render_content(
             plan.answer.content, event.get_sender_name() or sender_id
         )
         if self.reply_engine.is_answer_filtered(rendered):
-            logger.debug("ChatLearning: 答案命中过滤规则，取消发送")
-            return []
+            return [], f"命中「{question_preview}」，答案命中过滤规则"
         if not self.reply_engine.answer_within_length(rendered):
-            logger.info("ChatLearning: 答案字数超过所设定字数,取消发送")
-            return []
+            limit = self.config.as_int("replylength")
+            return [], f"命中「{question_preview}」，答案超过 {limit} 字"
 
         wait = self.reply_engine.wait_seconds()
         if wait > 0:
@@ -437,12 +455,13 @@ class ChatLearningPlugin(Star):
             group_id,
             content_preview(question_content),
         )
+        at_hint = "@bot，" if at_bot else ""
         return [
             Delivery(
                 MessageChain(components),
                 cache=(group_id, question_content, rendered),
             )
-        ]
+        ], f"{at_hint}命中「{question_preview}」→「{answer_preview}」，准备发送"
 
     # ---- 指令实现 ---------------------------------------------------
     @_safe_command

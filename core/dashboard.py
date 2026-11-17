@@ -52,6 +52,13 @@ CONFIG_FIELDS: list[dict[str, Any]] = [
         "hint": "使用标签词库或总词库回复",
     },
     {
+        "key": "debug",
+        "label": "Debug 日志",
+        "type": "bool",
+        "group": "开关",
+        "hint": "在 AstrBot 日志中打印每条群消息的记录与回复决策",
+    },
+    {
         "key": "replychance",
         "label": "回复概率",
         "type": "int",

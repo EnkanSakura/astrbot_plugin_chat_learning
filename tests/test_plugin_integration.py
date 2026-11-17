@@ -517,6 +517,73 @@ def print_round_table() -> None:
         print(f"{scene:<28}{params:<38}{expected:<24}{actual:<24}")
 
 
+class RecordingHandler(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+async def debug_scenario(plugin) -> None:
+    logger = logging.getLogger("test")
+    handler = RecordingHandler()
+    old_level = logger.level
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
+    try:
+        plugin.config.set("learning", 1)
+        plugin.config.set("reply", 1)
+        plugin.config.set("replychance", 100)
+        plugin.config.set("replycd", 0)
+        plugin.config.add_groups("learning", ["320"])
+        plugin.config.add_groups("reply", ["320"])
+        plugin.config.save()
+        seed_round_stock(plugin, "320", "调试问题", "调试答案")
+
+        plugin.config.set("debug", 0)
+        handler.messages.clear()
+        await plugin.on_message(
+            FakeEvent("普通消息", group_id="320", sender_id="1", timestamp=3000)
+        )
+        check(
+            "调试-关闭无日志",
+            not any("[ChatLearning:debug]" in item for item in handler.messages),
+        )
+
+        plugin.config.set("debug", 1)
+        handler.messages.clear()
+        await plugin.on_message(
+            FakeEvent("调试问题", group_id="320", sender_id="1", timestamp=3001)
+        )
+        debug_lines = [
+            item
+            for item in handler.messages
+            if "[ChatLearning:debug]" in item
+        ]
+        check("调试-开启有日志", bool(debug_lines))
+        check("调试-记录信息", any("记录：" in item for item in debug_lines))
+        check("调试-回复信息", any("回复：" in item for item in debug_lines))
+        check(
+            "调试-群与用户信息",
+            any("群320" in item and "用户1" in item for item in debug_lines),
+        )
+
+        plugin.config.set("debug", 0)
+        handler.messages.clear()
+        await plugin.on_message(
+            FakeEvent("普通消息", group_id="320", sender_id="1", timestamp=3002)
+        )
+        check(
+            "调试-再次关闭无日志",
+            not any("[ChatLearning:debug]" in item for item in handler.messages),
+        )
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(old_level)
+
+
 async def rounds_scenario(plugin) -> None:
     plugin.config.set("reply", 0)
     plugin.config.set("learning", 1)
@@ -634,6 +701,13 @@ async def main() -> None:
             sys.modules["astrbot.api.star"].Context(), config={}
         )
         await rounds_scenario(rounds_plugin)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        sys.modules["astrbot.api.star"].StarTools.data_root = tmp
+        debug_plugin = main_mod.ChatLearningPlugin(
+            sys.modules["astrbot.api.star"].Context(), config={}
+        )
+        await debug_scenario(debug_plugin)
     print_round_table()
     print(f"\n全部通过：{len(PASSED)} 项")
     for name in PASSED:

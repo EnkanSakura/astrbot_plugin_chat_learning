@@ -80,6 +80,34 @@ async def test_learning() -> None:
         )
 
 
+async def test_learning_outcomes() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        config, _stocks, filters, learning, _reply, _cmds = setup(tmp)
+        config.set("learning", 1)
+        config.add_groups("learning", ["100"])
+        first = await learning.on_group_message(
+            "100", text("问题"), {"Plain"}, "1", 1000
+        )
+        check("记录结果：新问题", first.action == "question")
+        check("记录结果：问题预览", "问题" in first.describe())
+        second = await learning.on_group_message(
+            "100", text("答案"), {"Plain"}, "1", 1001
+        )
+        check("记录结果：答案", second.action == "answer")
+        check("记录结果：答案指向问题", "问题" in second.answer_to)
+        config.set("learning", 0)
+        skipped = await learning.on_group_message(
+            "100", text("忽略"), {"Plain"}, "1", 1002
+        )
+        check("记录结果：关闭原因", "关闭" in skipped.reason)
+        config.set("learning", 1)
+        filters.add_sensitive(text("敏感"))
+        sensitive = await learning.on_group_message(
+            "100", text("敏感内容"), {"Plain"}, "1", 1003
+        )
+        check("记录结果：敏感词原因", "敏感词" in sensitive.reason)
+
+
 async def test_reply_engine() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         config, stocks, filters, _learning, reply, _cmds = setup(tmp)
@@ -293,6 +321,7 @@ async def test_commands() -> None:
 
 async def main() -> None:
     await test_learning()
+    await test_learning_outcomes()
     await test_reply_engine()
     await test_filters()
     await test_merge_and_autodelete()

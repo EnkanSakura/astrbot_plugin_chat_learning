@@ -20,6 +20,7 @@ DEFAULTS: dict[str, Any] = {
     # 开关
     "learning": 0,
     "reply": 0,
+    "debug": 0,
     # 记录/合并间隔（秒）
     "interval": 900,
     "mergetime": 900,

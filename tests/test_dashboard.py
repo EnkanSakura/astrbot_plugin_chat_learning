@@ -187,6 +187,10 @@ def test_config(service):
         any(field["key"] == "replychance" for field in payload["fields"]),
     )
     check(
+        "配置：Debug 字段",
+        any(field["key"] == "debug" for field in payload["fields"]),
+    )
+    check(
         "配置：默认值",
         next(item for item in payload["fields"] if item["key"] == "sendmode")["value"]
         is False,
@@ -198,6 +202,7 @@ def test_config(service):
                 "learning": True,
                 "replywait": [1.5, 0.5],
                 "botname": "小助手 助手",
+                "debug": True,
             },
             "typefreq": {"Plain": 2},
         }
@@ -206,6 +211,7 @@ def test_config(service):
     check("配置：保存整数", service.config.as_int("replychance") == 30)
     check("配置：保存等待", service.config.get("replywait") == [1.5, 0.5])
     check("配置：保存昵称", service.config.get("botname") == ["小助手", "助手"])
+    check("配置：保存 Debug", service.config.as_bool("debug") is True)
     check("配置：保存阈值", service.config.get("typefreq")["Plain"] == 2)
     expect_error(
         "配置：数值越界",

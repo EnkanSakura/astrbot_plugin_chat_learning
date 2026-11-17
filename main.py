@@ -75,10 +75,23 @@ class ChatLearningPlugin(Star):
     def __init__(self, context: Context, config: Any = None) -> None:
         super().__init__(context)
         self.settings = dict(config) if config is not None else {}
+        self.plugin_config = (
+            config
+            if hasattr(config, "save_config") and hasattr(config, "config_path")
+            else None
+        )
         self.data_dir = self._resolve_data_dir()
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
-        self.config = PluginConfig(self.data_dir / "config.json", seed=self._seed())
+        self.config = PluginConfig(
+            self.data_dir / "config.json",
+            seed=self._seed(),
+            sync=(
+                self._sync_plugin_config
+                if self.plugin_config is not None
+                else None
+            ),
+        )
         self.stocks = StockManager(self.data_dir)
         self.filters = FilterStore(self.data_dir / "filter.json")
         self.images = ImageStore(self.stocks.images_dir)
@@ -597,6 +610,63 @@ class ChatLearningPlugin(Star):
             return bool(getter("handlers_parsed_params"))
         except Exception:  # noqa: BLE001 - 事件实现差异时按普通消息处理
             return False
+
+    @staticmethod
+    def _coerce_plugin_config_value(current: Any, value: Any) -> Any:
+        """把运行时值转换成插件配置项原本的类型（尤其是 bool/int）。"""
+        if isinstance(current, bool):
+            return bool(value)
+        if isinstance(current, int) and not isinstance(current, bool):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return current
+        if isinstance(current, float):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return current
+        if isinstance(current, list):
+            return list(value) if isinstance(value, (list, tuple)) else current
+        if isinstance(current, dict):
+            return dict(value) if isinstance(value, dict) else current
+        if isinstance(current, str):
+            return str(value)
+        return value
+
+    def _plugin_config_is_newer(self) -> bool:
+        """插件配置页刚保存过时，插件配置优先于旧的运行时配置。"""
+        if self.plugin_config is None:
+            return False
+        try:
+            plugin_path = Path(str(self.plugin_config.config_path))
+            runtime_path = self.data_dir / "config.json"
+            if not runtime_path.exists():
+                return True
+            return plugin_path.stat().st_mtime_ns > runtime_path.stat().st_mtime_ns
+        except (AttributeError, OSError):
+            return False
+
+    def _sync_plugin_config(self, data: dict[str, Any]) -> None:
+        """把运行时配置中插件配置页可见的键回写，保持两边一致。"""
+        plugin_config = self.plugin_config
+        if plugin_config is None:
+            return
+        changed = False
+        for key in list(plugin_config.keys()):
+            if key not in data:
+                continue
+            current = plugin_config.get(key)
+            value = self._coerce_plugin_config_value(current, data[key])
+            if current != value:
+                plugin_config[key] = value
+                changed = True
+        if not changed:
+            return
+        try:
+            plugin_config.save_config()
+        except Exception:  # noqa: BLE001 - 同步失败不影响主功能
+            logger.exception("ChatLearning: 同步插件配置失败")
 
     def _seed(self) -> dict[str, Any]:
         """只把 WebUI 配置中与插件同名的项作为默认值种子。"""

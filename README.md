@@ -107,6 +107,9 @@ data/plugin_data/astrbot_plugin_chat_learning/
 所有持久化数据（配置、过滤词、图片、词库）都保存在 AstrBot 的 `data` 目录下，
 插件目录保持只读，升级或重装插件不会覆盖数据。
 
+插件配置页与面板「设置」共享同一份核心配置：任一处保存都会同步到另一处；
+群列表、标签、子管理员等运行时字段仍通过面板或指令管理。
+
 ## 调试日志
 
 在 AstrBot 插件配置或面板「设置 → 开关」中开启 **Debug 日志**（配置键 `debug`）后，
@@ -148,6 +151,7 @@ python tests/test_core.py               # 核心逻辑（学习/回复/过滤/�
 python tests/test_plugin_integration.py # 带 AstrBot 桩模块的事件路由端到端测试
 python tests/test_dashboard.py          # 面板业务层（群列表/词库/过滤/配置/备份恢复）
 python tests/test_dashboard_web.py      # 面板 Web API 注册与响应（桩模块）
+python tests/test_config_sync.py        # 插件配置与面板/运行时配置同步
 python tests/test_rounds.py             # 不同配置下的记录/回复轮次模拟（打印对照表）
 
 # 代码规范：ruff（配置见 pyproject.toml，与 AstrBot 主仓库一致）

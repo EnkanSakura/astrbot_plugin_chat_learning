@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -67,19 +68,51 @@ def _merge_defaults(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, An
 
 
 class PluginConfig:
-    """以 JSON 文件保存的动态配置。"""
+    """以 JSON 文件保存的动态配置。
 
-    def __init__(self, path: Path, seed: dict[str, Any] | None = None) -> None:
+    sync 用于把运行时配置回写到 AstrBot 插件配置，保证面板和插件配置页
+    使用同一份值。首次接入同步时保留运行时配置，之后以插件配置页为准，
+    避免 AstrBot 升级时新增默认项覆盖用户已有的运行时设置。
+    """
+
+    def __init__(
+        self,
+        path: Path,
+        seed: dict[str, Any] | None = None,
+        *,
+        sync: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
         self.path = Path(path)
+        self._sync = sync
+        raw = read_json(self.path, {})
+        stored = raw if isinstance(raw, dict) else {}
+        marker = self.path.parent / ".config_sync"
+        synced = marker.exists()
         data = dict(DEFAULTS)
         if seed:
             data = _merge_defaults(
                 data, {k: v for k, v in seed.items() if v is not None}
             )
-        stored = read_json(self.path, {})
-        if isinstance(stored, dict):
+        if stored:
             data = _merge_defaults(data, stored)
+        if seed and synced:
+            # 首次同步后，插件配置页是唯一来源，允许把值显式改回默认
+            data = _merge_defaults(
+                data,
+                {
+                    key: value
+                    for key, value in seed.items()
+                    if value is not None and key in DEFAULTS
+                },
+            )
         self.data = data
+        if sync is not None:
+            # 初始化时就把两边对齐，并落盘合并结果
+            self.save()
+            try:
+                marker.write_text("1", encoding="utf-8")
+            except OSError:
+                pass
 
     # ---- 基础访问 ---------------------------------------------------
     def get(self, key: str, default: Any = None) -> Any:
@@ -91,12 +124,13 @@ class PluginConfig:
         self.data[key] = value
 
     def save(self) -> None:
-        """只持久化与默认值不同的配置项。"""
-        """只持久化与默认值不同的键，未改动的 WebUI 配置继续跟随配置页。"""
+        """持久化运行时配置，并同步回 AstrBot 插件配置。"""
         changed = {
             key: value for key, value in self.data.items() if value != DEFAULTS.get(key)
         }
         write_json(self.path, changed)
+        if self._sync is not None:
+            self._sync(self.data)
 
     def as_dict(self) -> dict[str, Any]:
         """返回配置的浅拷贝。"""

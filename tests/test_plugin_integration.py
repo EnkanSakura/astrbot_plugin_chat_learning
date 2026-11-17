@@ -517,6 +517,50 @@ def print_round_table() -> None:
         print(f"{scene:<28}{params:<38}{expected:<24}{actual:<24}")
 
 
+class FakePluginConfig(dict):
+    """模拟 AstrBotConfig，供主流程同步测试使用。"""
+
+    def __init__(self, values, config_path):
+        super().__init__(values)
+        self.config_path = str(config_path)
+        self.default_config = dict(values)
+        self.saved = 0
+
+    def save_config(self):
+        self.saved += 1
+
+
+async def config_sync_scenario(main_mod) -> None:
+    from astrbot_plugin_chat_learning.core.storage import read_json
+
+    with tempfile.TemporaryDirectory() as tmp:
+        sys.modules["astrbot.api.star"].StarTools.data_root = tmp
+        fake = FakePluginConfig(
+            {"learning": False, "replychance": 50},
+            Path(tmp) / "plugin_config.json",
+        )
+        plugin = main_mod.ChatLearningPlugin(
+            sys.modules["astrbot.api.star"].Context(), config=fake
+        )
+        check("同步：初始化创建同步标记", (Path(tmp) / ".config_sync").exists())
+        plugin.config.set("replychance", 77)
+        plugin.config.save()
+        check("同步：指令/面板保存回写插件配置", fake["replychance"] == 77)
+
+        fake["learning"] = True
+        fake["replychance"] = 88
+        fake.save_config()
+        reloaded = main_mod.ChatLearningPlugin(
+            sys.modules["astrbot.api.star"].Context(), config=fake
+        )
+        check("同步：热重载后插件配置优先", reloaded.config.as_int("replychance") == 88)
+        check("同步：热重载后布尔值同步", reloaded.config.as_bool("learning") is True)
+        check(
+            "同步：运行时配置已落盘",
+            read_json(Path(tmp) / "config.json", {}).get("replychance") == 88,
+        )
+
+
 class RecordingHandler(logging.Handler):
     def __init__(self) -> None:
         super().__init__()
@@ -708,6 +752,8 @@ async def main() -> None:
             sys.modules["astrbot.api.star"].Context(), config={}
         )
         await debug_scenario(debug_plugin)
+
+    await config_sync_scenario(main_mod)
     print_round_table()
     print(f"\n全部通过：{len(PASSED)} 项")
     for name in PASSED:

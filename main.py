@@ -378,7 +378,7 @@ class ChatLearningPlugin(Star):
             event, group_id, sender_id, content
         )
         if self.config.as_bool("debug"):
-            logger.info(
+            logger.debug(
                 "[ChatLearning:debug] 群%s 用户%s 消息=%s | 记录：%s | 回复：%s",
                 group_id,
                 sender_id,
@@ -463,7 +463,7 @@ class ChatLearningPlugin(Star):
 
         question_content = plan.question.content if plan.question else content
         self._cooldown[group_id] = time.time()
-        logger.info(
+        logger.debug(
             "ChatLearning: 回复群%s，问题=%s",
             group_id,
             content_preview(question_content),

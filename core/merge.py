@@ -52,7 +52,9 @@ def merge_stocks(source: WordStock, target: dict[str, dict[str, Any]]) -> int:
     return merged
 
 
-def _write_merged(stocks: StockManager, name: str, merged: dict[str, dict[str, Any]]) -> None:
+def _write_merged(
+    stocks: StockManager, name: str, merged: dict[str, dict[str, Any]]
+) -> None:
     payload = {
         "version": WordStock.VERSION,
         "questions": {

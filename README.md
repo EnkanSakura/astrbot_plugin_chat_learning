@@ -7,7 +7,7 @@
 在之后有人说出相同或相似的问题时，按答案权重随机抽一条学到的回答接话。
 
 > 本项目是为 AstrBot（aiocqhttp 平台）重写的实现，不是原项目的直接打包；
-> 功能与交互参考原项目，代码按 AstrBot 插件规范重新组织。
+> 功能与交互参考原项目，代码按 AstrBot 插件规范重新组织，并按 AGPL-3.0 保留原项目署名。
 
 ## 功能
 
@@ -100,6 +100,8 @@ data/plugin_data/astrbot_plugin_chat_learning/
 ```
 
 词库为可读 JSON，每个问题包含出现次数、记录时间、是否正则以及答案列表（含权重与时间）。
+所有持久化数据（配置、过滤词、图片、词库）都保存在 AstrBot 的 `data` 目录下，
+插件目录保持只读，升级或重装插件不会覆盖数据。
 
 ## 与原版的差异
 
@@ -114,9 +116,18 @@ data/plugin_data/astrbot_plugin_chat_learning/
 ```bash
 python tests/test_core.py               # 核心逻辑（学习/回复/过滤/合并/管理模式/指令）
 python tests/test_plugin_integration.py # 带 AstrBot 桩模块的事件路由端到端测试
+
+# 代码规范：ruff（配置见 pyproject.toml，与 AstrBot 主仓库一致）
+python -m ruff check .
+python -m ruff format --check .
 ```
 
-## 致谢
+## 灵感来源与许可
 
-- 功能与交互参考 [ChatLearning](https://github.com/JHue58/ChatLearning)（作者 JHue58）
+- 功能、交互与算法思路来自 [ChatLearning](https://github.com/JHue58/ChatLearning)（作者 JHue58）；
+  本项目是面向 AstrBot + aiocqhttp 的重写移植，不是原项目代码的直接打包。
+- 原项目是 MiraiConsole 插件，最后更新于 2024 年 1 月，无法通过 PR 直接支持 AstrBot，
+  因此以独立插件形式发布；如果原作者计划支持 AstrBot，欢迎改为向其提交 PR。
+- 原项目与本项目均以 **GNU AGPL-3.0** 发布：原项目版权归其作者所有，
+  本插件保留同样的许可与署名（见 [LICENSE](LICENSE)），并在此说明代码来源。
 - 插件框架： [AstrBot](https://github.com/AstrBotDevs/AstrBot)

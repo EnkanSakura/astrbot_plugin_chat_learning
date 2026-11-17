@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import random
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from .config import PluginConfig
 from .filtering import FilterStore
@@ -42,6 +42,7 @@ class ReplyEngine:
 
     # ---- 词库选择 ---------------------------------------------------
     def candidate_stocks(self, group_id: str) -> list[str]:
+        """根据全局模式选择候选词库（分群/标签/总词库）。"""
         if not self.config.as_int("sendmode"):
             return [str(group_id)]
         tags = self.config.tag_dict().get(str(group_id)) or []
@@ -120,6 +121,7 @@ class ReplyEngine:
         return best[1], best[2]
 
     def lookup(self, group_id: str, content: list[dict]) -> ReplyPlan | None:
+        """检索答案：精确 → 正则 → 余弦相似度。"""
         if not content:
             return None
         names = self.candidate_stocks(group_id)
@@ -129,7 +131,11 @@ class ReplyEngine:
             text = content_plain_text(content).strip()
             if text:
                 hit = self._regex(names, text)
-                if hit is None and self.config.as_bool("cosmatch") and len(text) <= MAX_COSINE_LENGTH:
+                if (
+                    hit is None
+                    and self.config.as_bool("cosmatch")
+                    and len(text) <= MAX_COSINE_LENGTH
+                ):
                     hit = self._cosine(names, text)
         if hit is None:
             return None
@@ -153,6 +159,7 @@ class ReplyEngine:
 
     # ---- 概率 -------------------------------------------------------
     def roll_reply_chance(self, group_id: str) -> bool:
+        """按概率决定是否回复。"""
         chance = self.config.reply_chance_for(group_id)
         if chance >= 100:
             return True
@@ -162,6 +169,7 @@ class ReplyEngine:
 
     # ---- 文本渲染 ---------------------------------------------------
     def render_text(self, text: str, sender_name: str) -> str:
+        """替换答案文本中的 {me}/{name}/{segment} 占位符。"""
         names = self.config.get("botname") or ["我"]
         if isinstance(names, str):
             names = [names]
@@ -174,17 +182,22 @@ class ReplyEngine:
         )
 
     def render_content(self, content: list[dict], sender_name: str) -> list[dict]:
+        """渲染答案片段列表。"""
         rendered: list[dict] = []
         for segment in content:
             if segment.get("t") == "text":
                 rendered.append(
-                    {"t": "text", "s": self.render_text(segment.get("s", ""), sender_name)}
+                    {
+                        "t": "text",
+                        "s": self.render_text(segment.get("s", ""), sender_name),
+                    }
                 )
             else:
                 rendered.append(dict(segment))
         return rendered
 
     def answer_within_length(self, content: list[dict]) -> bool:
+        """检查答案文本是否超过长度上限。"""
         limit = max(1, self.config.as_int("replylength"))
         for segment in content:
             if segment.get("t") == "text" and len(str(segment.get("s") or "")) > limit:
@@ -192,6 +205,7 @@ class ReplyEngine:
         return True
 
     def wait_seconds(self) -> float:
+        """返回回复前的随机等待秒数。"""
         raw = self.config.get("replywait") or [0, 0]
         try:
             base, jitter = float(raw[0]), float(raw[1])
@@ -201,4 +215,5 @@ class ReplyEngine:
         return max(0.0, min(value, 30.0))
 
     def is_answer_filtered(self, content: list[dict]) -> bool:
+        """检查答案是否命中过滤规则。"""
         return not self.filters.check_content(content)

@@ -32,6 +32,7 @@ except Exception:  # noqa: BLE001 - 没有 jieba 时退化
 
 
 def backend_name() -> str:
+    """返回当前分词后端名称（jieba 或 fallback）。"""
     return _backend
 
 
@@ -49,6 +50,7 @@ def _fallback_tokens(text: str) -> list[str]:
 
 
 def tokenize(text: str) -> list[str]:
+    """分词并过滤标点，返回词列表。"""
     text = (text or "").strip()
     if not text:
         return []
@@ -58,20 +60,25 @@ def tokenize(text: str) -> list[str]:
         word = word.strip()
         if not word:
             continue
-        if word in _PUNCTUATION or all(ch in _PUNCTUATION or ch.isspace() for ch in word):
+        if word in _PUNCTUATION or all(
+            ch in _PUNCTUATION or ch.isspace() for ch in word
+        ):
             continue
         tokens.append(word)
     return tokens
 
 
 def cosine_similarity(left: str, right: str) -> float:
+    """计算两段文本的词频余弦相似度（0-1）。"""
     left_tokens = tokenize(left)
     right_tokens = tokenize(right)
     if not left_tokens or not right_tokens:
         return 0.0
     left_counter = Counter(left_tokens)
     right_counter = Counter(right_tokens)
-    dot = sum(count * right_counter.get(word, 0) for word, count in left_counter.items())
+    dot = sum(
+        count * right_counter.get(word, 0) for word, count in left_counter.items()
+    )
     if dot == 0:
         return 0.0
     left_norm = math.sqrt(sum(count * count for count in left_counter.values()))

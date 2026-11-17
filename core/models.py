@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
 
 from .utils import compact_json, now_ts
 
@@ -20,14 +20,17 @@ IMAGE_PLACEHOLDER = "[图片]"
 
 
 def text_segment(text: str) -> dict:
+    """构造一个文本片段。"""
     return {"t": TEXT, "s": text}
 
 
 def image_segment(digest: str, path: str) -> dict:
+    """构造一个图片片段（sha1 + 相对路径）。"""
     return {"t": IMAGE, "h": digest, "p": path}
 
 
 def normalize_content(segments: Iterable[dict]) -> list[dict]:
+    """规整片段列表：合并相邻文本、丢弃空片段。"""
     """规整片段列表：合并相邻文本、去掉空文本、图片保留摘要与路径。"""
     result: list[dict] = []
     for seg in segments:
@@ -50,19 +53,23 @@ def normalize_content(segments: Iterable[dict]) -> list[dict]:
 
 
 def content_key(content: list[dict]) -> str:
+    """生成问题/答案的唯一键。"""
     """问题/答案的唯一键：稳定的 JSON 字符串。"""
     return compact_json(content)
 
 
 def content_plain_text(content: list[dict]) -> str:
+    """拼接片段中的纯文本。"""
     return "".join(str(seg.get("s") or "") for seg in content if seg.get("t") == TEXT)
 
 
 def content_type_names(content: list[dict]) -> set[str]:
+    """返回片段涉及的配置类型名（Plain/Image）。"""
     return {TYPE_NAMES[seg["t"]] for seg in content if seg.get("t") in TYPE_NAMES}
 
 
 def content_preview(content: list[dict], limit: int = 60) -> str:
+    """把片段列表渲染成单行预览。"""
     """把片段列表渲染成便于阅读的单行预览。"""
     parts: list[str] = []
     for seg in content:
@@ -87,7 +94,8 @@ class Answer:
     time: int = 0
 
     @classmethod
-    def from_dict(cls, data: dict) -> "Answer":
+    def from_dict(cls, data: dict) -> Answer:
+        """从词库 JSON 还原一个答案。"""
         return cls(
             content=normalize_content(data.get("content") or []),
             same=int(data.get("same", 1) or 0),
@@ -95,10 +103,12 @@ class Answer:
         )
 
     def to_dict(self) -> dict:
+        """序列化为词库 JSON 中的答案结构。"""
         return {"content": self.content, "same": int(self.same), "time": int(self.time)}
 
     @property
     def key(self) -> str:
+        """答案的内容键。"""
         return content_key(self.content)
 
 
@@ -114,7 +124,8 @@ class Question:
     answers: list[Answer] = field(default_factory=list)
 
     @classmethod
-    def from_dict(cls, key: str, data: dict) -> "Question":
+    def from_dict(cls, key: str, data: dict) -> Question:
+        """从词库 JSON 还原一个问题。"""
         answers = [Answer.from_dict(item) for item in data.get("answers") or []]
         content = normalize_content(data.get("content") or [])
         if not content:
@@ -132,6 +143,7 @@ class Question:
         )
 
     def to_dict(self) -> dict:
+        """序列化为词库 JSON 中的问题结构。"""
         return {
             "content": self.content,
             "freq": int(self.freq),
@@ -142,6 +154,7 @@ class Question:
 
     @property
     def plain_text(self) -> str:
+        """问题片段的纯文本。"""
         return content_plain_text(self.content)
 
 
@@ -150,13 +163,16 @@ class WordStock:
 
     VERSION = 1
 
-    def __init__(self, path: Path, questions: dict[str, Question] | None = None) -> None:
+    def __init__(
+        self, path: Path, questions: dict[str, Question] | None = None
+    ) -> None:
         self.path = Path(path)
         self.questions: dict[str, Question] = questions or {}
         self.dirty = False
 
     @classmethod
-    def load(cls, path: Path) -> "WordStock":
+    def load(cls, path: Path) -> WordStock:
+        """从 JSON 文件加载词库。"""
         path = Path(path)
         if not path.exists():
             return cls(path)
@@ -174,6 +190,7 @@ class WordStock:
         return cls(path, questions)
 
     def save(self) -> None:
+        """原子写回词库 JSON。"""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "version": self.VERSION,
@@ -193,6 +210,7 @@ class WordStock:
         self.dirty = False
 
     def record_question(self, content: list[dict], regular: bool = False) -> Question:
+        """记录一次问题出现（已存在则累加频次）。"""
         content = normalize_content(content)
         key = content_key(content)
         question = self.questions.get(key)
@@ -209,6 +227,7 @@ class WordStock:
         return question
 
     def record_answer(self, question_key: str, content: list[dict]) -> bool:
+        """记录问题的答案（已存在则累加权重）。"""
         question = self.questions.get(question_key)
         if question is None:
             return False
@@ -225,9 +244,11 @@ class WordStock:
         return True
 
     def get(self, key: str) -> Question | None:
+        """按键取问题。"""
         return self.questions.get(key)
 
     def remove_question(self, key: str) -> bool:
+        """删除整条问题。"""
         if key in self.questions:
             del self.questions[key]
             self.dirty = True
@@ -235,6 +256,7 @@ class WordStock:
         return False
 
     def remove_answer(self, question_key: str, answer: Answer) -> bool:
+        """删除指定答案，答案为空时同时删除问题。"""
         question = self.questions.get(question_key)
         if question is None:
             return False
@@ -248,10 +270,13 @@ class WordStock:
         return False
 
     def answer_count(self) -> int:
+        """统计答案总数。"""
         return sum(len(question.answers) for question in self.questions.values())
 
     def stats(self) -> tuple[int, int]:
+        """返回（问题数，答案数）。"""
         return len(self.questions), self.answer_count()
 
     def iter_questions(self):
+        """遍历所有问题。"""
         return self.questions.items()

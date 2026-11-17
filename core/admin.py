@@ -9,7 +9,14 @@ from .commands import CommandService
 from .config import PluginConfig
 from .filtering import FilterStore
 from .maintenance import autodelete
-from .models import Answer, Question, content_key, content_plain_text, content_preview, normalize_content
+from .models import (
+    Answer,
+    Question,
+    content_key,
+    content_plain_text,
+    content_preview,
+    normalize_content,
+)
 from .storage import MERGE_STOCK, StockManager
 from .utils import parse_id_list, to_int
 
@@ -61,6 +68,7 @@ class AdminSession:
 
     # ---- 入口 -------------------------------------------------------
     async def feed(self, text: str, content: list[dict]) -> list[str]:
+        """把一条消息送入当前管理模式步骤，返回要发送的文本。"""
         text = (text or "").strip()
         content = normalize_content(content or [])
         handler = getattr(self, f"_state_{self.state}", None)
@@ -170,7 +178,9 @@ class AdminSession:
             stock = self.stocks.get(name)
             for key, question in stock.iter_questions():
                 qtext = question.plain_text
-                q_hit = keyword in qtext or (pattern is not None and pattern.search(qtext))
+                q_hit = keyword in qtext or (
+                    pattern is not None and pattern.search(qtext)
+                )
                 answers = question.answers
                 a_hit = [
                     answer
@@ -236,7 +246,9 @@ class AdminSession:
                         answer = next(
                             (a for a in question.answers if a.key == item["akey"]), None
                         )
-                        if answer is not None and stock.remove_answer(item["qkey"], answer):
+                        if answer is not None and stock.remove_answer(
+                            item["qkey"], answer
+                        ):
                             removed += 1
             for name in {item["stock"] for item in self.results}:
                 self.stocks.save(name)
@@ -283,7 +295,9 @@ class AdminSession:
                 self.filters.add_filter(entry, accurate=True)
         lines = []
         if missing:
-            lines.append("标记为" + " ".join(str(item) for item in missing) + " 的答案不存在")
+            lines.append(
+                "标记为" + " ".join(str(item) for item in missing) + " 的答案不存在"
+            )
         if removed:
             lines.append(f"删除{removed}个答案成功！")
             if also_filter:
@@ -302,14 +316,20 @@ class AdminSession:
         if option in (1, 2, 3):
             self.pending = {"mode": option}
             self.state = "filter_add"
-            tip = {1: "请发送需要过滤的关键字（模糊匹配）", 2: "请发送需要过滤的内容（精确匹配）", 3: "请发送敏感的关键字"}
+            tip = {
+                1: "请发送需要过滤的关键字（模糊匹配）",
+                2: "请发送需要过滤的内容（精确匹配）",
+                3: "请发送敏感的关键字",
+            }
             return [tip[option] + "，发送 exit 结束"]
         if option == 4:
             self.state = "filter_black_add"
             return ["请输入需要添加黑名单的账号（多个用空格隔开）"]
         if option == 5:
             self.state = "filter_view_menu"
-            return ["请输入需要查看的内容\n0.返回\n1.过滤的关键字\n2.敏感的关键字\n3.黑名单"]
+            return [
+                "请输入需要查看的内容\n0.返回\n1.过滤的关键字\n2.敏感的关键字\n3.黑名单"
+            ]
         return ["参数错误"] + [FILTER_MENU_TEXT]
 
     async def _state_filter_add(self, text: str, content: list[dict]) -> list[str]:
@@ -325,14 +345,18 @@ class AdminSession:
             self.filters.add_filter(entry, accurate=(mode == 2))
         return ["添加成功！" + "\n继续发送，或发送 exit 结束"]
 
-    async def _state_filter_black_add(self, text: str, content: list[dict]) -> list[str]:
+    async def _state_filter_black_add(
+        self, text: str, content: list[dict]
+    ) -> list[str]:
         ids = parse_id_list(text)
         if not ids:
             return ["参数错误"]
         self.filters.add_black(ids)
         return self._back_to_menu("添加完毕")
 
-    async def _state_filter_view_menu(self, text: str, content: list[dict]) -> list[str]:
+    async def _state_filter_view_menu(
+        self, text: str, content: list[dict]
+    ) -> list[str]:
         if not text.isdigit():
             return ["参数错误"]
         option = int(text)
@@ -354,7 +378,9 @@ class AdminSession:
         if option == 2:
             lines = ["==== 敏感关键字 ===="]
             for index, entry in enumerate(self.filters.sensitive):
-                lines.append(f"标记{index} {content_preview(entry.get('content') or [])}")
+                lines.append(
+                    f"标记{index} {content_preview(entry.get('content') or [])}"
+                )
             if len(lines) == 1:
                 lines.append("暂无敏感词")
             self.pending = {"delete_kind": "sensitive"}
@@ -417,7 +443,9 @@ class AdminSession:
         return self._back_to_menu("删除成功！")
 
     # ---- 自动清理 ---------------------------------------------------
-    async def _state_autodelete_confirm(self, text: str, content: list[dict]) -> list[str]:
+    async def _state_autodelete_confirm(
+        self, text: str, content: list[dict]
+    ) -> list[str]:
         if text.strip() != "确定":
             return self._back_to_menu("已取消")
         logs = autodelete(self.config, self.stocks, self.filters)

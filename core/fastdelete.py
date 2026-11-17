@@ -23,6 +23,7 @@ class ReplyCache:
         question_content: list[dict],
         answer_content: list[dict],
     ) -> None:
+        """登记一条机器人回复，供快速删除使用。"""
         if not message_id:
             return
         bucket = self._data.setdefault(str(group_id), OrderedDict())
@@ -32,17 +33,20 @@ class ReplyCache:
             bucket.popitem(last=False)
 
     def get(self, group_id: str, message_id: str):
+        """按消息 ID 取缓存的问答。"""
         bucket = self._data.get(str(group_id))
         if not bucket:
             return None
         return bucket.get(str(message_id))
 
     def remove(self, group_id: str, message_id: str) -> None:
+        """删除缓存条目。"""
         bucket = self._data.get(str(group_id))
         if bucket:
             bucket.pop(str(message_id), None)
 
     def nth_last(self, group_id: str, index: int):
+        """取倒数第 n 条缓存（1 表示最近一条）。"""
         """index=1 表示最近一条。返回 (message_id, entry)。"""
         bucket = self._data.get(str(group_id))
         if not bucket or index <= 0:
@@ -53,6 +57,7 @@ class ReplyCache:
         return items[-index]
 
     def clear(self, group_id: str | None = None) -> None:
+        """清空缓存（可只清某个群）。"""
         if group_id is None:
             self._data.clear()
         else:
@@ -71,6 +76,7 @@ class FastDeleteService:
         self.cache = cache
 
     def allowed(self, sender_id: str) -> bool:
+        """判断发送者是否有快速删除权限。"""
         if self.config.as_int("fastdelete") == 1:
             return True
         return str(sender_id) in self.config.admins()
@@ -100,6 +106,7 @@ class FastDeleteService:
         return found
 
     def delete(self, group_id: str, message_id: str) -> tuple[bool, str]:
+        """按消息 ID 从词库删除对应答案。"""
         entry = self.cache.get(group_id, message_id)
         if entry is None:
             return False, self.config.text("deletetemperror")
@@ -108,9 +115,8 @@ class FastDeleteService:
         self.cache.remove(group_id, message_id)
         return True, self.config.text("deletesuccess")
 
-    def delete_nth(
-        self, group_id: str, index: int
-    ) -> tuple[bool, str, str | None]:
+    def delete_nth(self, group_id: str, index: int) -> tuple[bool, str, str | None]:
+        """删除倒数第 n 条回复，返回是否成功与提示。"""
         hit = self.cache.nth_last(group_id, index)
         if hit is None:
             return False, self.config.text("deletetemperror"), None

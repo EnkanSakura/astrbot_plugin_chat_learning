@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from .config import PluginConfig
 from .fastdelete import FastDeleteService
@@ -63,6 +64,7 @@ HELP_TEXT = """ChatLearning 指令表（AstrBot 标准指令组；群聊需先 @
 ==== 维护 ====
 /cl admin                   进入管理模式（交互式搜索/删除/过滤/清理）
 /cl d [序号]                删除机器人刚才的回复（可引用该消息）"""
+
 
 @dataclass
 class CommandContext:
@@ -132,6 +134,7 @@ class CommandService:
 
     # ---- 入口 -------------------------------------------------------
     async def handle(self, text: str, ctx: CommandContext) -> list[str]:
+        """执行一条管理指令，返回要发送的文本列表。"""
         text = (text or "").strip()
         if not text:
             return [HELP_TEXT]
@@ -146,6 +149,7 @@ class CommandService:
         return [HELP_TEXT]
 
     def summary_lines(self) -> list[str]:
+        """生成 /cl check 的统计与设置文本。"""
         lines = ["==== 群词库统计 ===="]
         tags = set(self.config.all_tags())
         groups: list[str] = []
@@ -161,14 +165,22 @@ class CommandService:
             extra = f" 标签:{'、'.join(tags_of_group)}" if tags_of_group else ""
             lines.append(f"词库{name}收集到问题{questions}个 答案{answers}个{extra}")
         lines.append("==== 设置 ====")
-        lines.append("记录功能：" + ("开启" if self.config.as_bool("learning") else "关闭"))
-        lines.append("回复功能：" + ("开启" if self.config.as_bool("reply") else "关闭"))
-        lines.append("全局模式：" + ("开启" if self.config.as_int("sendmode") else "关闭"))
+        lines.append(
+            "记录功能：" + ("开启" if self.config.as_bool("learning") else "关闭")
+        )
+        lines.append(
+            "回复功能：" + ("开启" if self.config.as_bool("reply") else "关闭")
+        )
+        lines.append(
+            "全局模式：" + ("开启" if self.config.as_int("sendmode") else "关闭")
+        )
         lines.append(
             "问题余弦相似度计算："
             + ("开启" if self.config.as_bool("cosmatch") else "关闭")
         )
-        lines.append("艾特回复：" + ("开启" if self.config.as_bool("atreply") else "关闭"))
+        lines.append(
+            "艾特回复：" + ("开启" if self.config.as_bool("atreply") else "关闭")
+        )
         lines.append(f"回复触发概率：{self.config.as_int('replychance')}%")
         wait = self.config.get("replywait") or [0, 0]
         try:
@@ -203,9 +215,10 @@ class CommandService:
     async def _cmd_grouplist(self, args: str, ctx: CommandContext) -> list[str]:
         learning = "、".join(self.config.group_list("learning")) or "无"
         reply = "、".join(self.config.group_list("reply")) or "无"
-        subadmin = "、".join(
-            str(key) for key in (self.config.get("subadmin") or {}).keys()
-        ) or "无"
+        subadmin = (
+            "、".join(str(key) for key in (self.config.get("subadmin") or {}).keys())
+            or "无"
+        )
         unmerge = "、".join(self.config.group_list("unmerge")) or "无"
         admins = "、".join(self.config.admins()) or "未设置"
         return [
@@ -451,9 +464,7 @@ class CommandService:
             return ["添加完毕"]
         if kind == "subadmin":
             return await self._add_subadmin(rest, ctx)
-        return [
-            "参数错误，支持：add learning|learnings|reply|tag|unmerge|subadmin"
-        ]
+        return ["参数错误，支持：add learning|learnings|reply|tag|unmerge|subadmin"]
 
     async def _add_tag(self, rest: str) -> list[str]:
         parts = rest.split(maxsplit=1)
@@ -483,9 +494,7 @@ class CommandService:
         if not members and self.resolve_group_admins is not None:
             members = await self.resolve_group_admins(group, ctx)
         if not members:
-            return [
-                "未能获取该群管理员列表，请手动指定：add subadmin <群号> <QQ...>"
-            ]
+            return ["未能获取该群管理员列表，请手动指定：add subadmin <群号> <QQ...>"]
         table = dict(self.config.get("subadmin") or {})
         current = [str(item) for item in (table.get(group) or [])]
         for member in members:

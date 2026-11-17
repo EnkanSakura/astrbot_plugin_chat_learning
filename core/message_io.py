@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 from urllib.parse import unquote, urlparse
 
 import astrbot.api.message_components as Comp
@@ -56,6 +56,7 @@ class ImageStore:
         self.directory.mkdir(parents=True, exist_ok=True)
 
     def path_for(self, relative: str | None, digest: str | None) -> Path | None:
+        """根据相对路径或摘要定位已保存的图片。"""
         if relative:
             candidate = self.directory.parent / relative
             if candidate.exists():
@@ -66,6 +67,7 @@ class ImageStore:
         return None
 
     async def save_component(self, component) -> dict | None:
+        """把图片组件落盘并返回图片片段。"""
         try:
             data = await self._read_bytes(component)
         except Exception as exc:  # noqa: BLE001 - 图片失败不影响文字记录
@@ -129,7 +131,9 @@ class ImageStore:
         try:
             timeout = aiohttp.ClientTimeout(total=DOWNLOAD_TIMEOUT)
             headers = {"User-Agent": "Mozilla/5.0 (ChatLearning AstrBot Plugin)"}
-            async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+            async with aiohttp.ClientSession(
+                timeout=timeout, headers=headers
+            ) as session:
                 async with session.get(url) as response:
                     if response.status != 200:
                         return None
@@ -149,6 +153,7 @@ class MessageCodec:
         self.images = images
 
     async def content_from_event(self, event) -> tuple[list[dict], set[str]]:
+        """把事件消息转换成（内容片段，原始类型集合）。"""
         segments: list[dict] = []
         raw_types: set[str] = set()
         for component in event.get_messages() or []:
@@ -163,6 +168,7 @@ class MessageCodec:
         return normalize_content(segments), raw_types
 
     def build_chain(self, content: Iterable[dict]) -> MessageChain:
+        """把内容片段重建为可发送的消息链。"""
         components = []
         for segment in content:
             kind = segment.get("t")
@@ -178,6 +184,7 @@ class MessageCodec:
 
     @staticmethod
     def detect_at_bot(event) -> bool:
+        """判断消息是否 @ 了机器人。"""
         self_id = str(event.get_self_id() or "")
         if not self_id:
             return False
@@ -188,6 +195,7 @@ class MessageCodec:
 
     @staticmethod
     def detect_at_all(event) -> bool:
+        """判断消息是否 @ 全体成员。"""
         for component in event.get_messages() or []:
             if isinstance(component, Comp.AtAll):
                 return True
@@ -197,9 +205,12 @@ class MessageCodec:
 
     @staticmethod
     def message_timestamp(event, fallback: int) -> int:
+        """读取消息时间戳，缺失时使用回退值。"""
         raw = getattr(event.message_obj, "raw_message", None)
         try:
-            value = raw.get("time") if hasattr(raw, "get") else getattr(raw, "time", None)
+            value = (
+                raw.get("time") if hasattr(raw, "get") else getattr(raw, "time", None)
+            )
             if value is not None:
                 return int(value)
         except Exception:  # noqa: BLE001

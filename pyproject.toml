@@ -1,0 +1,23 @@
+[tool.ruff]
+# 与 AstrBot 主仓库保持一致的格式化与检查规则
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+  "F",     # Pyflakes
+  "W",     # pycodestyle warnings
+  "E",     # pycodestyle errors
+  "ASYNC", # flake8-async
+  "C4",    # flake8-comprehensions
+  "Q",     # flake8-quotes
+  "I",     # import-order
+  "UP",    # pyupgrade
+]
+ignore = [
+  "F403",
+  "F405",
+  "E501",
+  "ASYNC230", # 插件内部使用同步文件 IO 读写词库
+  "ASYNC240",
+]

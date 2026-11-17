@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from .models import (
     content_key,
@@ -49,7 +49,9 @@ class FilterStore:
             str(key): int(value) for key, value in (raw.get("blackdict") or {}).items()
         }
         types = raw.get("type")
-        self.types: list[str] = list(types) if isinstance(types, list) else list(DEFAULT_TYPES)
+        self.types: list[str] = (
+            list(types) if isinstance(types, list) else list(DEFAULT_TYPES)
+        )
 
     @staticmethod
     def _coerce_entry(item: dict) -> dict:
@@ -61,6 +63,7 @@ class FilterStore:
         return {"content": normalize_content(item or []), "accurate": False}
 
     def save(self) -> None:
+        """把过滤规则写回文件。"""
         write_json(
             self.path,
             {
@@ -89,11 +92,11 @@ class FilterStore:
         return False
 
     def match(self, content: list[dict], entry: dict) -> bool:
+        """判断内容是否命中某条过滤规则。"""
         return self._match_entry(content, entry)
 
-    def check_content(
-        self, content: list[dict], raw_types: Iterable[str] = ()
-    ) -> bool:
+    def check_content(self, content: list[dict], raw_types: Iterable[str] = ()) -> bool:
+        """返回 True 表示放行；命中过滤词/指令/类型时拦下。"""
         """返回 True 表示放行，False 表示被过滤。"""
         content = normalize_content(content)
         for entry in self.filters:
@@ -108,6 +111,7 @@ class FilterStore:
         return True
 
     def sensitive_hit(self, content: list[dict]) -> bool:
+        """判断内容是否命中敏感词。"""
         content = normalize_content(content)
         for entry in self.sensitive:
             entry_content = entry.get("content") or []
@@ -123,17 +127,20 @@ class FilterStore:
 
     # ---- 黑名单 -----------------------------------------------------
     def register_black(self, user_id: str) -> int:
+        """记录一次敏感词命中并返回累计次数。"""
         user_id = str(user_id)
         self.blackdict[user_id] = self.blackdict.get(user_id, 0) + 1
         self.save()
         return self.blackdict[user_id]
 
     def add_black(self, user_ids: Iterable[str], count: int = 99999) -> None:
+        """手动加入黑名单（默认计数 99999）。"""
         for user_id in user_ids:
             self.blackdict[str(user_id)] = count
         self.save()
 
     def remove_black(self, user_ids: Iterable[str]) -> list[str]:
+        """从黑名单移除账号，返回不存在的账号。"""
         missing: list[str] = []
         for user_id in user_ids:
             user_id = str(user_id)
@@ -145,10 +152,12 @@ class FilterStore:
         return missing
 
     def is_blacklisted(self, user_id: str, threshold: int) -> bool:
+        """判断账号是否已达黑名单阈值。"""
         return self.blackdict.get(str(user_id), 0) >= max(1, threshold)
 
     # ---- 增删 -------------------------------------------------------
     def add_filter(self, content: list[dict], accurate: bool = False) -> None:
+        """添加过滤词（模糊/精确）。"""
         content = normalize_content(content)
         key = content_key(content)
         for entry in self.filters:
@@ -160,24 +169,31 @@ class FilterStore:
         self.save()
 
     def add_sensitive(self, content: list[dict]) -> None:
+        """添加敏感词，同时加入过滤词。"""
         content = normalize_content(content)
         key = content_key(content)
-        if all(content_key(entry.get("content") or []) != key for entry in self.sensitive):
+        if all(
+            content_key(entry.get("content") or []) != key for entry in self.sensitive
+        ):
             self.sensitive.append({"content": content, "accurate": False})
         self.add_filter(content, accurate=False)
 
     def clear_filters(self) -> None:
+        """清空过滤词。"""
         self.filters.clear()
         self.save()
 
     def clear_sensitive(self) -> None:
+        """清空敏感词。"""
         self.sensitive.clear()
         self.save()
 
     def clear_black(self) -> None:
+        """清空黑名单。"""
         self.blackdict.clear()
         self.save()
 
     def set_types(self, types: list[str]) -> None:
+        """设置按消息类型过滤的类型列表。"""
         self.types = list(types)
         self.save()

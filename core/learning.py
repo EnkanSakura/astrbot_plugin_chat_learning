@@ -33,6 +33,7 @@ class LearningEngine:
         self._last_save: dict[str, float] = {}
 
     def reset(self, group_id: str | None = None) -> None:
+        """清空等待配对的待回答问题。"""
         if group_id is None:
             self._pending.clear()
         else:
@@ -50,6 +51,7 @@ class LearningEngine:
         sender_id: str,
         timestamp: int,
     ) -> None:
+        """处理一条群消息：过滤检查后按间隔配对记录问答。"""
         if not self.config.as_bool("learning"):
             return
         if not self.config.has_group("learning", group_id):
@@ -72,7 +74,7 @@ class LearningEngine:
         stock_name = group_id
         async with self.stocks.lock_for(stock_name):
             stock: WordStock = self.stocks.get(stock_name)
-            question = stock.record_question(content)
+            stock.record_question(content)
             if pending is not None and timestamp - pending.time <= interval:
                 # 当前消息作为“上一条问题”的答案
                 stock.record_answer(content_key(pending.content), content)

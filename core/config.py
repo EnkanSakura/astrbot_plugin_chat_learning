@@ -72,7 +72,9 @@ class PluginConfig:
         self.path = Path(path)
         data = dict(DEFAULTS)
         if seed:
-            data = _merge_defaults(data, {k: v for k, v in seed.items() if v is not None})
+            data = _merge_defaults(
+                data, {k: v for k, v in seed.items() if v is not None}
+            )
         stored = read_json(self.path, {})
         if isinstance(stored, dict):
             data = _merge_defaults(data, stored)
@@ -80,31 +82,36 @@ class PluginConfig:
 
     # ---- 基础访问 ---------------------------------------------------
     def get(self, key: str, default: Any = None) -> Any:
+        """读取配置项，缺省时回退到内置默认值。"""
         return self.data.get(key, DEFAULTS.get(key, default))
 
     def set(self, key: str, value: Any) -> None:
+        """设置配置项（调用 save 后才持久化）。"""
         self.data[key] = value
 
     def save(self) -> None:
+        """只持久化与默认值不同的配置项。"""
         """只持久化与默认值不同的键，未改动的 WebUI 配置继续跟随配置页。"""
         changed = {
-            key: value
-            for key, value in self.data.items()
-            if value != DEFAULTS.get(key)
+            key: value for key, value in self.data.items() if value != DEFAULTS.get(key)
         }
         write_json(self.path, changed)
 
     def as_dict(self) -> dict[str, Any]:
+        """返回配置的浅拷贝。"""
         return dict(self.data)
 
     # ---- 数值/布尔便捷方法 ------------------------------------------
     def as_int(self, key: str) -> int:
+        """以 int 读取配置项。"""
         return to_int(self.data.get(key), to_int(DEFAULTS.get(key), 0)) or 0
 
     def as_float(self, key: str) -> float:
+        """以 float 读取配置项。"""
         return to_float(self.data.get(key), to_float(DEFAULTS.get(key), 0.0)) or 0.0
 
     def as_bool(self, key: str) -> bool:
+        """以 bool 读取配置项。"""
         return bool(self.data.get(key))
 
     # ---- 群列表 -----------------------------------------------------
@@ -115,14 +122,17 @@ class PluginConfig:
     }
 
     def group_list(self, kind: str) -> list[str]:
+        """读取群列表（learning/reply/unmerge）。"""
         key = self._GROUP_KEYS.get(kind, kind)
         values = self.data.get(key) or []
         return [str(item) for item in values]
 
     def has_group(self, kind: str, group_id: str) -> bool:
+        """判断群是否在某个列表中。"""
         return str(group_id) in self.group_list(kind)
 
     def add_groups(self, kind: str, group_ids: list[str]) -> None:
+        """把群加入某个列表（自动去重）。"""
         key = self._GROUP_KEYS.get(kind, kind)
         current = self.group_list(key)
         for group_id in group_ids:
@@ -131,6 +141,7 @@ class PluginConfig:
         self.data[key] = current
 
     def remove_groups(self, kind: str, group_ids: list[str]) -> list[str]:
+        """把群从列表移除，返回移除成功的群。"""
         key = self._GROUP_KEYS.get(kind, kind)
         current = self.group_list(key)
         removed: list[str] = []
@@ -143,6 +154,7 @@ class PluginConfig:
         return removed
 
     def toggle_group(self, kind: str, group_id: str) -> bool:
+        """在列表中切换群的开关状态，返回切换后的状态。"""
         group_id = str(group_id)
         if self.has_group(kind, group_id):
             self.remove_groups(kind, [group_id])
@@ -151,6 +163,7 @@ class PluginConfig:
         return True
 
     def tag_dict(self) -> dict[str, list[str]]:
+        """返回规范化后的群标签字典。"""
         raw = self.data.get("tag") or {}
         result: dict[str, list[str]] = {}
         for group_id, tags in raw.items():
@@ -160,9 +173,11 @@ class PluginConfig:
         return result
 
     def groups_with_tag(self, tag: str) -> list[str]:
+        """返回带有指定标签的群。"""
         return [gid for gid, tags in self.tag_dict().items() if tag in tags]
 
     def all_tags(self) -> list[str]:
+        """返回全部标签。"""
         tags: list[str] = []
         for values in self.tag_dict().values():
             for tag in values:
@@ -172,6 +187,7 @@ class PluginConfig:
 
     # ---- 概率 -------------------------------------------------------
     def reply_chance_for(self, group_id: str) -> int:
+        """返回群专属回复概率，未设置时回退全局。"""
         table = self.data.get("singlereplychance") or {}
         value = table.get(str(group_id))
         if value is None:
@@ -180,8 +196,10 @@ class PluginConfig:
 
     # ---- 文本模板 ---------------------------------------------------
     def text(self, key: str) -> str:
+        """读取可配置的提示文本。"""
         texts = self.data.get("texts") or {}
         return str(texts.get(key, DEFAULT_TEXTS.get(key, "")))
 
     def admins(self) -> list[str]:
+        """返回管理员 QQ 列表。"""
         return [str(item) for item in (self.data.get("Administrator") or [])]

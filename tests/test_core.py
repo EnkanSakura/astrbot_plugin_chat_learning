@@ -42,7 +42,11 @@ def setup(tmp: str):
     learning = LearningEngine(config, stocks, filters)
     reply = ReplyEngine(config, stocks, filters)
     cmds = CommandService(
-        config, stocks, filters, learning, reply,
+        config,
+        stocks,
+        filters,
+        learning,
+        reply,
         FastDeleteService(config, stocks, ReplyCache(config)),
     )
     return config, stocks, filters, learning, reply, cmds
@@ -70,7 +74,10 @@ async def test_learning() -> None:
         # 过滤词
         _filters.add_filter(text("广告"))
         await learning.on_group_message("100", text("这是广告"), {"Plain"}, "5", 5001)
-        check("学习：过滤词命中不记录", stocks.get("100").get(content_key(text("这是广告"))) is None)
+        check(
+            "学习：过滤词命中不记录",
+            stocks.get("100").get(content_key(text("这是广告"))) is None,
+        )
 
 
 async def test_reply_engine() -> None:
@@ -90,7 +97,10 @@ async def test_reply_engine() -> None:
         stock.record_answer(content_key(text("^天气.*")), text("今天晴"))
         stock.save()
         plan = reply.lookup("100", text("天气怎么样"))
-        check("回复：正则命中", plan is not None and plan.question is not None and plan.question.regular)
+        check(
+            "回复：正则命中",
+            plan is not None and plan.question is not None and plan.question.regular,
+        )
         # 余弦相似度
         config.set("cosmatch", 1)
         config.set("cosmatching", 0.5)
@@ -102,7 +112,10 @@ async def test_reply_engine() -> None:
         check("回复：正常答案放行", not reply.is_answer_filtered(text("你好呀")))
         # 占位符与长度
         rendered = reply.render_content(text("{name}说{me}很好{segment}"), "小明")
-        check("回复：占位符渲染", rendered[0]["s"].startswith("小明说") and "\n" in rendered[0]["s"])
+        check(
+            "回复：占位符渲染",
+            rendered[0]["s"].startswith("小明说") and "\n" in rendered[0]["s"],
+        )
         config.set("replylength", 3)
         check("回复：长度超限", not reply.answer_within_length(text("太长了吧")))
         # 概率
@@ -120,7 +133,9 @@ async def test_filters() -> None:
         filters.add_filter(text("精确词"), accurate=True)
         check("过滤：精确命中", not filters.check_content(text("精确词"), {"Plain"}))
         check("过滤：精确不误伤", filters.check_content(text("精确词啊"), {"Plain"}))
-        check("过滤：指令不记录", not filters.check_content(text("!learning"), {"Plain"}))
+        check(
+            "过滤：指令不记录", not filters.check_content(text("!learning"), {"Plain"})
+        )
         check("过滤：类型命中", not filters.check_content(text("x"), {"Quote"}))
         filters.add_sensitive(text("敏感"))
         check("敏感：命中", filters.sensitive_hit(text("很敏感的话")))
@@ -147,7 +162,10 @@ async def test_merge_and_autodelete() -> None:
         question = merged.get(content_key(text("共同问题")))
         check("合并：权重累加", question is not None and question.freq == 2)
         check("合并：答案合并", question is not None and len(question.answers) == 2)
-        check("合并：带标签的群不进总词库", merged.get(content_key(text("200独有"))) is None)
+        check(
+            "合并：带标签的群不进总词库",
+            merged.get(content_key(text("200独有"))) is None,
+        )
         check("合并：生成标签词库", stocks.exists("游戏"))
 
         # 自动清理：只出现一次的问题会被删除
@@ -156,7 +174,10 @@ async def test_merge_and_autodelete() -> None:
         remaining = stocks.get("100")
         check("清理：删除低频条目", remaining.get(content_key(text("100独有"))) is None)
         # 共同问题在 100 的 freq 只有 1，但合并后为 2，应保留
-        check("清理：保留跨群高频问题", remaining.get(content_key(text("共同问题"))) is not None)
+        check(
+            "清理：保留跨群高频问题",
+            remaining.get(content_key(text("共同问题"))) is not None,
+        )
 
 
 async def test_fastdelete() -> None:
@@ -191,7 +212,10 @@ async def test_admin_session() -> None:
         check("管理：搜索结果列出标记", any("标记0" in line for line in outputs))
         outputs = await session.feed("0", [])
         check("管理：按标记删除", any("删除" in line for line in outputs))
-        check("管理：答案确实被删除", stocks.get("100").get(content_key(text("今天吃什么"))) is None)
+        check(
+            "管理：答案确实被删除",
+            stocks.get("100").get(content_key(text("今天吃什么"))) is None,
+        )
         # 过滤流程
         await session.feed("3", [])
         await session.feed("1", [])
@@ -218,7 +242,9 @@ async def test_admin_session() -> None:
         outputs = await session.feed("3", [])
         check("管理：自定义回复添加成功", any("添加完毕" in line for line in outputs))
         question = stocks.get("100").get(content_key(text("新问题")))
-        check("管理：自定义问答入库", question is not None and len(question.answers) == 1)
+        check(
+            "管理：自定义问答入库", question is not None and len(question.answers) == 1
+        )
         # 退出：先回到主菜单，再退出
         await session.feed("0", [])
         outputs = await session.feed("0", [])
@@ -231,7 +257,10 @@ async def test_commands() -> None:
         ctx = CommandContext(sender_id="1", is_admin=True)
         outputs = await cmds.handle("add learnings 100 200", ctx)
         check("指令：添加记录+回复群", outputs == ["添加完毕 已同时加入回复列表"])
-        check("指令：群列表生效", config.has_group("reply", "100") and config.has_group("learning", "200"))
+        check(
+            "指令：群列表生效",
+            config.has_group("reply", "100") and config.has_group("learning", "200"),
+        )
         outputs = await cmds.handle("grouplist", ctx)
         check("指令：grouplist 输出", len(outputs) == 5)
         outputs = await cmds.handle("learning 60", ctx)
@@ -241,13 +270,21 @@ async def test_commands() -> None:
         outputs = await cmds.handle("reply -s 60 100", ctx)
         check("指令：单群概率", config.reply_chance_for("100") == 60)
         outputs = await cmds.handle("replywait 5 0", ctx)
-        check("指令：等待时间校验", outputs == ["基准时间不得大于4秒，浮动时间不得大于2秒！"])
+        check(
+            "指令：等待时间校验",
+            outputs == ["基准时间不得大于4秒，浮动时间不得大于2秒！"],
+        )
         outputs = await cmds.handle("remove reply 100", ctx)
-        check("指令：移除群", not config.has_group("reply", "100") and "移除完毕" in outputs)
+        check(
+            "指令：移除群",
+            not config.has_group("reply", "100") and "移除完毕" in outputs,
+        )
         outputs = await cmds.handle("add tag 游戏 100", ctx)
         check("指令：加标签", config.tag_dict().get("100") == ["游戏"])
         outputs = await cmds.handle("add subadmin 100 42 43", ctx)
-        check("指令：子管理员", (config.get("subadmin") or {}).get("100") == ["42", "43"])
+        check(
+            "指令：子管理员", (config.get("subadmin") or {}).get("100") == ["42", "43"]
+        )
         outputs = await cmds.handle("check", ctx)
         check("指令：check 输出", any("回复触发概率" in line for line in outputs))
         outputs = await cmds.handle("nonsense", ctx)

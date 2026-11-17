@@ -44,7 +44,9 @@ def install_stubs() -> None:
         def get_config(self, umo=None):
             return {}
 
-    star_mod = _module("astrbot.api.star", Star=Star, Context=Context, StarTools=StarTools)
+    star_mod = _module(
+        "astrbot.api.star", Star=Star, Context=Context, StarTools=StarTools
+    )
     api.star = star_mod
 
     class EventMessageType:
@@ -159,7 +161,9 @@ def install_stubs() -> None:
         def __iter__(self):
             return iter(self.chain)
 
-    mer = _module("astrbot.core.message.message_event_result", MessageChain=MessageChain)
+    mer = _module(
+        "astrbot.core.message.message_event_result", MessageChain=MessageChain
+    )
     message_mod.message_event_result = mer
     astrbot.api.message_components = comp_mod
 
@@ -189,7 +193,11 @@ class FakeEvent:
         self._components = (
             components
             if components is not None
-            else ([sys.modules["astrbot.api.message_components"].Plain(text)] if text else [])
+            else (
+                [sys.modules["astrbot.api.message_components"].Plain(text)]
+                if text
+                else []
+            )
         )
         self.sent = []
         self.stopped = False
@@ -217,9 +225,7 @@ class FakeEvent:
 
 
 def chain_text(chain) -> str:
-    return "".join(
-        getattr(component, "text", "") for component in chain.chain
-    )
+    return "".join(getattr(component, "text", "") for component in chain.chain)
 
 
 PASSED: list[str] = []
@@ -257,8 +263,12 @@ async def scenario(plugin) -> None:
     )
 
     # 4. 群内学习两条消息
-    await plugin.on_message(FakeEvent("你好", group_id="100", sender_id="1", timestamp=1000))
-    await plugin.on_message(FakeEvent("你好呀", group_id="100", sender_id="2", timestamp=1010))
+    await plugin.on_message(
+        FakeEvent("你好", group_id="100", sender_id="1", timestamp=1000)
+    )
+    await plugin.on_message(
+        FakeEvent("你好呀", group_id="100", sender_id="2", timestamp=1010)
+    )
     stock = plugin.stocks.get("100")
     check("学习：词库落盘", stock.stats() == (2, 1))
 
@@ -269,9 +279,17 @@ async def scenario(plugin) -> None:
         file="", path=str(image_source)
     )
     await plugin.on_message(
-        FakeEvent("", group_id="100", sender_id="5", timestamp=3000, components=[image_component])
+        FakeEvent(
+            "",
+            group_id="100",
+            sender_id="5",
+            timestamp=3000,
+            components=[image_component],
+        )
     )
-    await plugin.on_message(FakeEvent("图片答案", group_id="100", sender_id="6", timestamp=3010))
+    await plugin.on_message(
+        FakeEvent("图片答案", group_id="100", sender_id="6", timestamp=3010)
+    )
     image_questions = [
         question
         for question in plugin.stocks.get("100").questions.values()
@@ -288,7 +306,10 @@ async def scenario(plugin) -> None:
     await plugin._admin_command("reply 100", FakeEvent("cl reply 100"))
     event = FakeEvent("你好", group_id="100", sender_id="3", timestamp=1100)
     await plugin.on_message(event)
-    check("回复：发送了答案", len(event.sent) == 1 and chain_text(event.sent[0]) == "你好呀")
+    check(
+        "回复：发送了答案",
+        len(event.sent) == 1 and chain_text(event.sent[0]) == "你好呀",
+    )
     check("回复：阻止后续 LLM 处理", event.stopped)
 
     # 5b. 图片问题命中（同一张图片按 sha1 匹配；先等冷却）
@@ -302,7 +323,9 @@ async def scenario(plugin) -> None:
         sender_id="7",
         timestamp=3100,
         components=[
-            sys.modules["astrbot.api.message_components"].Image(file="", path=str(image_copy))
+            sys.modules["astrbot.api.message_components"].Image(
+                file="", path=str(image_copy)
+            )
         ],
     )
     await plugin.on_message(image_event)
@@ -379,14 +402,60 @@ async def scenario(plugin) -> None:
     params = list(inspect.signature(plugin.cl_learning).parameters.values())
     check(
         "指令组：learning 使用 GreedyStr 且无默认值",
-        params[-1].name == "args"
-        and params[-1].default is inspect.Parameter.empty,
+        params[-1].name == "args" and params[-1].default is inspect.Parameter.empty,
     )
 
     help_text = sys.modules["astrbot_plugin_chat_learning.core.commands"].HELP_TEXT
     check(
         "指令组：帮助文本为 /cl 格式",
         "/cl learning" in help_text and "!learning" not in help_text,
+    )
+
+    # 11. 错误处理：指令实现抛异常时被捕获并返回可读提示
+    original_handle = plugin.commands.handle
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    plugin.commands.handle = boom
+    lines = await plugin._admin_command("check", FakeEvent("cl check"))
+    plugin.commands.handle = original_handle
+    check("容错：指令异常被捕获", bool(lines) and "失败" in lines[0])
+
+    # 12. 错误处理：消息解析抛异常时不向外抛出
+    original_codec = plugin.codec.content_from_event
+
+    async def broken_content(event):
+        raise RuntimeError("broken")
+
+    plugin.codec.content_from_event = broken_content
+    try:
+        await plugin.on_message(FakeEvent("任意消息", group_id="100", sender_id="9"))
+    finally:
+        plugin.codec.content_from_event = original_codec
+    check("容错：消息异常被捕获", True)
+
+    # 13. 数据目录：默认为 StarTools 提供的 data 目录，失败时回退到 data/plugin_data
+    star_tools = sys.modules["astrbot.api.star"].StarTools
+    check(
+        "数据目录：默认使用 StarTools 提供的目录",
+        str(plugin.data_dir) == str(star_tools.data_root),
+    )
+    original_get_data_dir = star_tools.get_data_dir
+
+    def fail_dir(name=None):
+        raise RuntimeError("no data dir")
+
+    star_tools.get_data_dir = staticmethod(fail_dir)
+    try:
+        ghost = object.__new__(type(plugin))
+        fallback = ghost._resolve_data_dir()
+    finally:
+        star_tools.get_data_dir = staticmethod(original_get_data_dir)
+    check(
+        "数据目录：回退到 data/plugin_data",
+        "plugin_data" in fallback.parts
+        and fallback.name == "astrbot_plugin_chat_learning",
     )
 
 

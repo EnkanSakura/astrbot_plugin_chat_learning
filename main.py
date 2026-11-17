@@ -4,11 +4,15 @@
 适配 AstrBot + aiocqhttp：记录群里的问答对，在合适的时候用学到的答案回复。
 
 管理指令统一使用 AstrBot 标准指令组：/cl <子指令>（别名 /chatlearning）。
+
+本项目以 GNU AGPL-3.0 发布（见 LICENSE）；功能与交互移植自 ChatLearning
+（https://github.com/JHue58/ChatLearning，AGPL-3.0），原项目版权归其作者所有。
 """
 
 from __future__ import annotations
 
 import asyncio
+import functools
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +45,21 @@ NO_PERMISSION_TEXT = (
     "或私聊 bot 发送 /cl setadmin <你的QQ>"
 )
 GROUP_ONLY_TEXT = "该指令只能在群聊中使用"
+
+
+def _safe_command(func):
+    """包装指令实现：异常只记录日志并回复提示，避免单个错误影响 bot 运行。"""
+
+    @functools.wraps(func)
+    async def wrapper(self, *args, **kwargs):
+        """执行被包装的指令方法，异常时返回可读提示。"""
+        try:
+            return await func(self, *args, **kwargs)
+        except Exception:  # noqa: BLE001 - 指令失败不应中断 bot
+            logger.exception("ChatLearning: 指令 %s 执行失败", func.__name__)
+            return ["指令执行失败，详情见 AstrBot 日志"]
+
+    return wrapper
 
 
 @dataclass
@@ -84,6 +103,7 @@ class ChatLearningPlugin(Star):
 
     # ---- 生命周期 ---------------------------------------------------
     async def initialize(self) -> None:
+        """插件加载：记录数据目录，并启动总词库合并任务。"""
         logger.info("ChatLearning 已启动，数据目录：%s", self.data_dir)
         logger.info("ChatLearning 相似度分词后端：%s", self._similarity_backend())
         if not self.config.admins():
@@ -94,6 +114,7 @@ class ChatLearningPlugin(Star):
         self._merge_task = asyncio.create_task(self._merge_loop())
 
     async def terminate(self) -> None:
+        """插件卸载：取消后台任务并把内存中的词库刷盘。"""
         task = self._merge_task
         self._merge_task = None
         if task is not None and not task.done():
@@ -266,6 +287,7 @@ class ChatLearningPlugin(Star):
     # ---- 消息监听（学习与回复） -------------------------------------
     @filter.event_message_type(filter.EventMessageType.ALL, priority=-1)
     async def on_message(self, event: AstrMessageEvent) -> None:
+        """监听所有消息：管理模式会话、学习与自动回复；标准指令交给指令处理器。"""
         if self._is_command_event(event):
             return
         if self._is_unknown_group_command(event):
@@ -414,7 +436,9 @@ class ChatLearningPlugin(Star):
         ]
 
     # ---- 指令实现 ---------------------------------------------------
+    @_safe_command
     async def _admin_command(self, line: str, event: AstrMessageEvent) -> list[str]:
+        """执行管理员指令；未配置管理员时允许首个 setadmin 作为初始化。"""
         sender_id = str(event.get_sender_id() or "")
         line = (line or "").strip()
         if not self._is_admin(sender_id):
@@ -429,9 +453,9 @@ class ChatLearningPlugin(Star):
             line, self._command_context(event, sender_id, is_admin=True)
         )
 
-    async def _learning_command(
-        self, args: str, event: AstrMessageEvent
-    ) -> list[str]:
+    @_safe_command
+    async def _learning_command(self, args: str, event: AstrMessageEvent) -> list[str]:
+        """处理 /cl learning：群内开关本群，管理员可设置全局间隔。"""
         sender_id = str(event.get_sender_id() or "")
         group_id = str(event.get_group_id() or "")
         arg = (args or "").strip()
@@ -447,7 +471,9 @@ class ChatLearningPlugin(Star):
             return await self._admin_command(f"learning {arg}", event)
         return await self._admin_command(f"learning {arg}".strip(), event)
 
+    @_safe_command
     async def _reply_command(self, args: str, event: AstrMessageEvent) -> list[str]:
+        """处理 /cl reply：群内开关本群并设置本群概率，管理员可改全局配置。"""
         sender_id = str(event.get_sender_id() or "")
         group_id = str(event.get_group_id() or "")
         arg = (args or "").strip()
@@ -473,7 +499,9 @@ class ChatLearningPlugin(Star):
             return ["只有 bot 管理员可以修改全局回复配置"]
         return await self._admin_command(f"reply {arg}".strip(), event)
 
+    @_safe_command
     async def _admin_session_command(self, event: AstrMessageEvent) -> list[str]:
+        """处理 /cl admin：为管理员或群子管理员创建交互式管理会话。"""
         sender_id = str(event.get_sender_id() or "")
         group_id = str(event.get_group_id() or "")
         if group_id:
@@ -494,9 +522,11 @@ class ChatLearningPlugin(Star):
         )
         return [MENU_TEXT]
 
+    @_safe_command
     async def _fast_delete_command(
         self, args: str, event: AstrMessageEvent
     ) -> list[str]:
+        """处理 /cl d：从词库删除机器人刚发的答案，并撤回该消息。"""
         group_id = str(event.get_group_id() or "")
         sender_id = str(event.get_sender_id() or "")
         if not group_id:
@@ -541,6 +571,7 @@ class ChatLearningPlugin(Star):
             return False
 
     def _seed(self) -> dict[str, Any]:
+        """只把 WebUI 配置中与插件同名的项作为默认值种子。"""
         return {
             key: value
             for key, value in self.settings.items()
@@ -548,10 +579,17 @@ class ChatLearningPlugin(Star):
         }
 
     def _resolve_data_dir(self) -> Path:
+        """数据目录固定在 AstrBot 的 data 目录，插件更新/重装不会覆盖数据。"""
         try:
             return Path(StarTools.get_data_dir(PLUGIN_NAME))
-        except Exception:  # noqa: BLE001 - 回退到常规数据目录
-            return Path("data") / "plugin_data" / PLUGIN_NAME
+        except Exception:  # noqa: BLE001 - 回退到显式拼接的 data 目录
+            logger.exception("ChatLearning: 获取插件数据目录失败，尝试回退")
+            try:
+                from astrbot.api.util import get_astrbot_data_path
+
+                return Path(get_astrbot_data_path()) / "plugin_data" / PLUGIN_NAME
+            except Exception:  # noqa: BLE001
+                return Path("data") / "plugin_data" / PLUGIN_NAME
 
     @staticmethod
     def _similarity_backend() -> str:

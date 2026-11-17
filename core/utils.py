@@ -12,6 +12,7 @@ _SPLIT_RE = re.compile(r"[,\s，、;；]+")
 
 
 def now_ts() -> int:
+    """返回当前 Unix 时间戳（秒）。"""
     return int(time.time())
 
 
@@ -29,6 +30,7 @@ def fmt_ts(ts: Any) -> str:
 
 
 def to_int(value: Any, default: int | None = None) -> int | None:
+    """宽松地转换为 int，失败时返回默认值。"""
     try:
         return int(str(value).strip())
     except (TypeError, ValueError):
@@ -36,6 +38,7 @@ def to_int(value: Any, default: int | None = None) -> int | None:
 
 
 def to_float(value: Any, default: float | None = None) -> float | None:
+    """宽松地转换为 float，失败时返回默认值。"""
     try:
         return float(str(value).strip())
     except (TypeError, ValueError):
@@ -43,25 +46,30 @@ def to_float(value: Any, default: float | None = None) -> float | None:
 
 
 def parse_id_list(text: str) -> list[str]:
+    """把空格/中英文逗号分隔的输入切成列表。"""
     """把 "123 456，789" 这类输入切成 ID 列表。"""
     return [part for part in _SPLIT_RE.split((text or "").strip()) if part]
 
 
 def compact_json(obj: Any) -> str:
+    """紧凑 JSON 序列化，用于生成稳定的问题键。"""
     return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
 
 
 def stable_json(obj: Any) -> str:
+    """按键排序的 JSON 序列化，便于比较。"""
     return json.dumps(obj, ensure_ascii=False, sort_keys=True)
 
 
 def sha1_hex(data: bytes | str) -> str:
+    """计算字节串或字符串的 sha1 摘要。"""
     if isinstance(data, str):
         data = data.encode("utf-8")
     return hashlib.sha1(data).hexdigest()
 
 
 def shorten(text: str, limit: int = 30) -> str:
+    """把长文本压成单行摘要用于展示。"""
     text = " ".join(str(text or "").split())
     if len(text) <= limit:
         return text
@@ -69,6 +77,7 @@ def shorten(text: str, limit: int = 30) -> str:
 
 
 def split_command(text: str) -> tuple[str, str]:
+    """拆分首词与剩余参数，首词转小写。"""
     """拆分首词与剩余参数，首词转小写。"""
     text = (text or "").strip()
     if not text:
@@ -80,6 +89,7 @@ def split_command(text: str) -> tuple[str, str]:
 
 
 def strip_command_prefix(text: str) -> str:
+    """去掉聊天指令前缀（! / ！）。"""
     """去掉聊天指令前缀 ! 或 ！。"""
     text = (text or "").strip()
     if text[:1] in ("!", "！"):
@@ -88,4 +98,5 @@ def strip_command_prefix(text: str) -> str:
 
 
 def contains_cjk(text: str) -> bool:
+    """判断文本是否包含中日韩字符。"""
     return any("\u4e00" <= ch <= "\u9fa5" for ch in text or "")

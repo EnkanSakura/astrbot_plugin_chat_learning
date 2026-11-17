@@ -63,7 +63,9 @@ HELP_TEXT = """ChatLearning 指令表（AstrBot 标准指令组；群聊需先 @
 /cl remove learning|reply|unmerge|subadmin|tag <群号...>
 ==== 维护 ====
 /cl admin                   进入管理模式（交互式搜索/删除/过滤/清理）
-/cl d [序号]                删除机器人刚才的回复（可引用该消息）"""
+/cl d [序号]                删除机器人刚才的回复（可引用该消息）
+==== 可视化面板 ====
+WebUI 插件详情 > 群学习面板  查看状态、管理词库/过滤/配置、备份恢复"""
 
 
 @dataclass

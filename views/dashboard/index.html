@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>群学习面板</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="hero">
+        <div class="hero-main">
+          <span class="hero-mark" aria-hidden="true">学</span>
+          <div class="hero-text">
+            <h1 id="page-title">群学习面板</h1>
+            <p id="hero-sub">正在连接 AstrBot…</p>
+          </div>
+        </div>
+        <div class="hero-side">
+          <span class="conn" id="conn" data-state="loading">
+            <span class="conn-dot" aria-hidden="true"></span>
+            <span id="conn-label">连接中</span>
+          </span>
+          <button class="btn ghost" id="refresh" type="button">刷新</button>
+        </div>
+      </header>
+
+      <nav class="tabs" role="tablist" aria-label="面板分区">
+        <button class="tab is-active" id="tab-status" data-tab="status" role="tab" aria-selected="true" aria-controls="panel-status">状态</button>
+        <button class="tab" id="tab-wordstock" data-tab="wordstock" role="tab" aria-selected="false" aria-controls="panel-wordstock">词库</button>
+        <button class="tab" id="tab-filters" data-tab="filters" role="tab" aria-selected="false" aria-controls="panel-filters">过滤</button>
+        <button class="tab" id="tab-settings" data-tab="settings" role="tab" aria-selected="false" aria-controls="panel-settings">设置</button>
+        <button class="tab" id="tab-backup" data-tab="backup" role="tab" aria-selected="false" aria-controls="panel-backup">备份</button>
+      </nav>
+
+      <main class="panels">
+        <section class="panel is-active" id="panel-status" role="tabpanel" aria-labelledby="tab-status">
+          <div class="stat-grid" id="stat-grid" aria-live="polite"></div>
+          <div class="split">
+            <section class="card">
+              <div class="card-head">
+                <h2>群词库</h2>
+                <span class="muted" id="stock-hint"></span>
+              </div>
+              <div class="table-wrap">
+                <table class="table stock-table">
+                  <thead>
+                    <tr><th>词库</th><th class="num">问题</th><th class="num">答案</th><th class="col-tags">标签</th><th class="col-status">记录</th><th class="col-status">回复</th></tr>
+                  </thead>
+                  <tbody id="stock-body"></tbody>
+                </table>
+              </div>
+              <p class="empty" id="stock-empty" hidden>还没有任何词库，先开启记录并添加群。</p>
+            </section>
+            <section class="card">
+              <div class="card-head"><h2>运行信息</h2></div>
+              <dl class="info" id="runtime-info"></dl>
+              <div class="card-actions">
+                <button class="btn" id="merge-now" type="button">立即合并词库</button>
+                <button class="btn danger ghost" id="autodelete" type="button">清理低频条目</button>
+              </div>
+              <pre class="log" id="maintenance-log" hidden></pre>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-wordstock" role="tabpanel" aria-labelledby="tab-wordstock">
+          <section class="card">
+            <div class="toolbar">
+              <label class="field inline">
+                <span>词库</span>
+                <select id="wordstock-group" aria-label="选择词库"></select>
+              </label>
+              <form class="search" id="wordstock-search" role="search">
+                <input id="wordstock-query" type="search" placeholder="搜索问题或答案…" autocomplete="off" maxlength="100" aria-label="搜索关键词" />
+                <button class="btn" type="submit">搜索</button>
+              </form>
+              <span class="muted" id="wordstock-hint"></span>
+            </div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr><th>问题</th><th class="num">频次</th><th>答案</th></tr>
+                </thead>
+                <tbody id="wordstock-body"></tbody>
+              </table>
+            </div>
+            <p class="scroll-hint">左右滑动查看完整表格</p>
+            <p class="empty" id="wordstock-empty" hidden>没有找到相关问答。</p>
+            <div class="pager">
+              <button class="btn ghost" id="page-prev" type="button">上一页</button>
+              <span class="muted" id="page-info"></span>
+              <button class="btn ghost" id="page-next" type="button">下一页</button>
+            </div>
+          </section>
+        </section>
+
+        <section class="panel" id="panel-filters" role="tabpanel" aria-labelledby="tab-filters">
+          <div class="grid-3">
+            <section class="card">
+              <div class="card-head"><h2>过滤词</h2><span class="pill" id="filter-count">0</span></div>
+              <ul class="list" id="filter-list"></ul>
+              <form class="inline-form" id="filter-form">
+                <input id="filter-text" placeholder="输入关键字…" maxlength="200" aria-label="过滤关键字" />
+                <label class="check"><input type="checkbox" id="filter-accurate" />精确</label>
+                <button class="btn" type="submit">添加</button>
+              </form>
+            </section>
+            <section class="card">
+              <div class="card-head"><h2>敏感词</h2><span class="pill" id="sensitive-count">0</span></div>
+              <ul class="list" id="sensitive-list"></ul>
+              <form class="inline-form" id="sensitive-form">
+                <input id="sensitive-text" placeholder="输入敏感词…" maxlength="200" aria-label="敏感词" />
+                <button class="btn" type="submit">添加</button>
+              </form>
+            </section>
+            <section class="card">
+              <div class="card-head"><h2>黑名单</h2><span class="pill" id="black-count">0</span></div>
+              <ul class="list" id="black-list"></ul>
+              <form class="inline-form" id="black-form">
+                <input id="black-text" placeholder="QQ 号，空格分隔…" aria-label="黑名单 QQ" />
+                <button class="btn" type="submit">添加</button>
+              </form>
+            </section>
+          </div>
+          <section class="card">
+            <div class="card-head">
+              <h2>按消息类型过滤</h2>
+              <button class="btn" id="types-save" type="button">保存类型</button>
+            </div>
+            <p class="muted">勾选后，含这些消息类型的发言不会被记录。</p>
+            <div class="checks" id="types-box"></div>
+          </section>
+        </section>
+
+        <section class="panel" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings">
+          <form id="settings-form">
+            <div id="settings-groups"></div>
+            <section class="card" id="typefreq-card">
+              <div class="card-head">
+                <h2>回复阈值</h2>
+                <span class="muted">答案重复次数低于阈值时不会发送</span>
+              </div>
+              <div class="checks" id="typefreq-box"></div>
+            </section>
+          </form>
+          <div class="savebar" id="savebar" hidden>
+            <span id="dirty-hint">有未保存的修改</span>
+            <div class="savebar-actions">
+              <button class="btn ghost" id="settings-reset" type="button">放弃</button>
+              <button class="btn primary" id="settings-save" type="button">保存配置</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-backup" role="tabpanel" aria-labelledby="tab-backup">
+          <div class="split">
+            <section class="card">
+              <div class="card-head"><h2>导出备份</h2></div>
+              <p class="muted">包含配置、过滤规则与全部词库 JSON；图片文件不在备份内。</p>
+              <button class="btn primary" id="backup-export" type="button">下载备份文件</button>
+              <p class="muted hint-inline">备份保存在 data 目录的 backups/ 下，最多保留 5 份。</p>
+            </section>
+            <section class="card">
+              <div class="card-head"><h2>导入备份</h2></div>
+              <p class="muted">恢复前会自动把当前数据备份到 data 目录。</p>
+              <input type="file" id="backup-file" accept="application/json,.json" />
+              <div class="backup-preview" id="backup-preview"></div>
+              <div class="restore-options" id="restore-options" hidden>
+                <label class="check"><input type="checkbox" id="restore-config" checked />恢复配置</label>
+                <label class="check"><input type="checkbox" id="restore-filters" checked />恢复过滤规则</label>
+                <label class="check"><input type="checkbox" id="restore-wordstock" checked />恢复词库</label>
+                <fieldset class="radio-row">
+                  <legend>词库方式</legend>
+                  <label class="check"><input type="radio" name="wordstock-mode" value="merge" checked />合并到现有词库</label>
+                  <label class="check"><input type="radio" name="wordstock-mode" value="replace" />覆盖现有词库</label>
+                </fieldset>
+                <label class="check"><input type="checkbox" id="restore-confirm" />我确认恢复以上内容</label>
+                <button class="btn danger" id="restore-run" type="button" disabled>开始恢复</button>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+
+      <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+      <dialog class="dialog" id="confirm-dialog">
+        <form method="dialog" class="dialog-inner">
+          <h2 id="confirm-title">确认操作</h2>
+          <p id="confirm-message" class="muted"></p>
+          <div class="dialog-actions">
+            <button class="btn ghost" value="cancel" type="submit">取消</button>
+            <button class="btn danger" id="confirm-ok" value="confirm" type="submit">确认</button>
+          </div>
+        </form>
+      </dialog>
+    </div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

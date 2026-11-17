@@ -21,12 +21,14 @@
 - **过滤**：过滤词（模糊/精确）、敏感词 + 黑名单容错次数、按消息类型过滤
 - **管理模式**：私聊 bot 进入交互式管理，搜索/查看/按标记删除词库条目，维护过滤与黑名单，自动清理低频条目，添加自定义问答
 - **快速删除**：发送 `/cl d`，或引用机器人消息后发送 `/cl d`（`/cl d 2` 删除倒数第二条），把刚才的回复从词库中删掉
+- **可视化面板**：在 AstrBot WebUI 的插件详情页打开「群学习面板」，查看运行状态、管理词库与过滤、编辑配置、备份恢复，无需记指令
 
 ## 安装
 
 1. 将本目录放到 `AstrBot/data/plugins/astrbot_plugin_chat_learning`
 2. 在 WebUI 插件页重载插件（依赖会自动安装）
 3. 在插件配置里填写 **Administrator**（管理员 QQ），或私聊 bot 发送 `/cl setadmin <你的QQ>` 完成初始化
+4. 在 WebUI 插件详情页打开「群学习面板」，之后的可视化管理都在这里（AstrBot >= 4.30）
 
 > 可选依赖 `jieba`：用于余弦相似度匹配。未安装时插件仍可运行，相似度匹配会退化为字符二元组。
 
@@ -92,6 +94,7 @@
 data/plugin_data/astrbot_plugin_chat_learning/
 ├── config.json          # 运行时配置（指令修改后写入，仅保存与默认值不同的项）
 ├── filter.json          # 过滤词 / 敏感词 / 黑名单
+├── backups/             # 面板导出的备份（最多保留 5 份）
 ├── images/              # 学到的图片（按 sha1 去重）
 └── wordstock/
     ├── <群号>.json      # 分群词库
@@ -103,6 +106,25 @@ data/plugin_data/astrbot_plugin_chat_learning/
 所有持久化数据（配置、过滤词、图片、词库）都保存在 AstrBot 的 `data` 目录下，
 插件目录保持只读，升级或重装插件不会覆盖数据。
 
+## 可视化面板
+
+在 AstrBot WebUI 的插件详情页打开 **群学习面板**，单页多标签，亮暗色跟随 WebUI：
+
+- **状态**：词库规模、记录/回复开关、运行信息、最近合并日志；可手动合并词库、清理低频条目
+- **词库**：按群/标签/总词库切换，搜索问题或答案，分页浏览，删除问题/答案，直接调整答案权重
+- **过滤**：过滤词（模糊/精确）、敏感词、黑名单增删，按消息类型过滤
+- **设置**：回复、学习、匹配、安全等核心配置表单，保存后立即生效
+- **备份**：下载包含配置、过滤规则与词库的 JSON；导入时可选恢复范围与合并/覆盖方式，恢复前自动备份当前数据
+
+![群学习面板（浅色）](screenshots/dashboard-light.png)
+
+![群学习面板（深色）](screenshots/dashboard-dark.png)
+
+面板每 5 秒轮询状态页，其他标签切换时按需加载。开发预览时用任意静态服务器
+（例如 `python -m http.server`）打开 `views/dashboard/index.html?mock=1`，
+不带 AstrBot 时会使用 `dev-mock.js` 的示例数据。
+后端接口注册在插件 Web API 前缀 `/astrbot_plugin_chat_learning/dashboard/` 下。
+
 ## 与原版的差异
 
 - 仅支持 aiocqhttp 平台，消息只保留 **文本 + 图片**（@、表情、引用等不记录）
@@ -110,12 +132,15 @@ data/plugin_data/astrbot_plugin_chat_learning/
 - 命令改为 AstrBot 标准指令组 `/cl <子指令>`（别名 `/chatlearning`），管理模式为交互式 `/cl admin`；不再使用原版的 `!指令` 与控制台 TUI
 - 词库使用 JSON，不再兼容原版 `.cl` pickle 文件
 - 新增：`{me}` / `{name}` / `{segment}` 占位符沿用原版语义；修复了原版答案文本含花括号会抛异常的问题
+- 新增：AstrBot WebUI 的「群学习面板」，用于状态查看、词库/过滤/配置管理与备份恢复
 
 ## 开发与测试
 
 ```bash
 python tests/test_core.py               # 核心逻辑（学习/回复/过滤/合并/管理模式/指令）
 python tests/test_plugin_integration.py # 带 AstrBot 桩模块的事件路由端到端测试
+python tests/test_dashboard.py          # 面板业务层（词库/过滤/配置/备份恢复）
+python tests/test_dashboard_web.py      # 面板 Web API 注册与响应（桩模块）
 
 # 代码规范：ruff（配置见 pyproject.toml，与 AstrBot 主仓库一致）
 python -m ruff check .

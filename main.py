@@ -28,6 +28,7 @@ from astrbot.core.star.filter.command import GreedyStr
 from .core.admin import GROUP_MENU_TEXT, MENU_TEXT, AdminSession
 from .core.commands import HELP_TEXT, CommandContext, CommandService
 from .core.config import DEFAULTS, PluginConfig
+from .core.dashboard import DashboardService
 from .core.fastdelete import FastDeleteService, ReplyCache
 from .core.filtering import FilterStore
 from .core.learning import LearningEngine
@@ -96,6 +97,7 @@ class ChatLearningPlugin(Star):
             self.fastdelete,
             resolve_group_admins=self._resolve_group_admins,
         )
+        self.dashboard = DashboardService(self.config, self.stocks, self.filters)
 
         self.sessions: dict[str, AdminSession] = {}
         self._cooldown: dict[str, float] = {}
@@ -112,6 +114,12 @@ class ChatLearningPlugin(Star):
                 "或私聊 bot 发送 /cl setadmin <QQ号> 完成初始化"
             )
         self._merge_task = asyncio.create_task(self._merge_loop())
+        try:
+            from .core.dashboard_web import register_dashboard_web_apis
+
+            register_dashboard_web_apis(self.context, self.dashboard)
+        except Exception:  # noqa: BLE001 - 旧版本没有 Web API 能力时不影响主功能
+            logger.exception("ChatLearning: 注册可视化视图 API 失败（旧版本可忽略）")
 
     async def terminate(self) -> None:
         """插件卸载：取消后台任务并把内存中的词库刷盘。"""
@@ -136,6 +144,7 @@ class ChatLearningPlugin(Star):
             try:
                 await asyncio.to_thread(self.learning.flush)
                 logs = await asyncio.to_thread(rebuild_all, self.config, self.stocks)
+                self.dashboard.mark_merged(logs)
                 for line in logs:
                     logger.debug("ChatLearning: %s", line)
             except asyncio.CancelledError:

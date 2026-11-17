@@ -1,0 +1,87 @@
+{
+  "learning": {
+    "type": "bool",
+    "description": "记录功能总开关",
+    "default": false
+  },
+  "reply": {
+    "type": "bool",
+    "description": "回复功能总开关",
+    "default": false
+  },
+  "interval": {
+    "type": "int",
+    "description": "词库链间隔（秒）：两条消息间隔小于该值时，前一条作为问、后一条作为答",
+    "default": 900
+  },
+  "mergetime": {
+    "type": "int",
+    "description": "总词库/标签词库合成间隔（秒）",
+    "default": 900
+  },
+  "sendmode": {
+    "type": "bool",
+    "description": "全局模式：开启后使用总词库（或群标签词库）回复，而不是分群词库",
+    "default": false
+  },
+  "replychance": {
+    "type": "int",
+    "description": "回复触发概率（0-100）",
+    "default": 50
+  },
+  "replycd": {
+    "type": "int",
+    "description": "每个群的回复冷却时间（秒）",
+    "default": 3
+  },
+  "replywait": {
+    "type": "list",
+    "description": "回复前的随机等待 [基准秒, 浮动秒]",
+    "default": [0, 0]
+  },
+  "replylength": {
+    "type": "int",
+    "description": "单条答案文本的最大字数，超出则不发送",
+    "default": 100
+  },
+  "cosmatch": {
+    "type": "bool",
+    "description": "问题余弦相似度匹配（需要 jieba，较耗 CPU）",
+    "default": false
+  },
+  "cosmatching": {
+    "type": "float",
+    "description": "余弦相似度阈值（0-1）",
+    "default": 0.5
+  },
+  "atreply": {
+    "type": "bool",
+    "description": "被 @ 时无视回复概率直接回复",
+    "default": true
+  },
+  "botname": {
+    "type": "list",
+    "description": "bot 昵称列表，答案中的 {me} 会随机替换为其中之一",
+    "default": ["我"]
+  },
+  "blackfreq": {
+    "type": "int",
+    "description": "黑名单容错次数：命中敏感词达到该次数后不再记录其发言",
+    "default": 5
+  },
+  "tempmessagenum": {
+    "type": "int",
+    "description": "每个群缓存的机器人回复条数（用于快速删除）",
+    "default": 32
+  },
+  "fastdelete": {
+    "type": "bool",
+    "description": "快速删除权限：开启后所有人可用，关闭则仅管理员可用",
+    "default": false
+  },
+  "Administrator": {
+    "type": "list",
+    "description": "管理员 QQ 号列表，可私聊 bot 发送 !命令 进行管理",
+    "default": []
+  }
+}

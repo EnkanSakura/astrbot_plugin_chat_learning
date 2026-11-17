@@ -1,14 +1,117 @@
-# astrbot-plugin-helloworld
+# astrbot_plugin_chat_learning
 
-AstrBot 插件模板 / A template plugin for AstrBot plugin feature
+让 bot 学会你所在群的说话方式的 AstrBot 插件，移植自 MiraiConsole 插件
+[ChatLearning](https://github.com/JHue58/ChatLearning)。
 
-> [!NOTE]
-> This repo is just a template of [AstrBot](https://github.com/AstrBotDevs/AstrBot) Plugin.
-> 
-> [AstrBot](https://github.com/AstrBotDevs/AstrBot) is an agentic assistant for both personal and group conversations. It can be deployed across dozens of mainstream instant messaging platforms, including QQ, Telegram, Feishu, DingTalk, Slack, LINE, Discord, Matrix, etc. In addition, it provides a reliable and extensible conversational AI infrastructure for individuals, developers, and teams. Whether you need a personal AI companion, an intelligent customer support agent, an automation assistant, or an enterprise knowledge base, AstrBot enables you to quickly build AI applications directly within your existing messaging workflows.
+插件会静默记录群里连续的两条消息（前一条为「问」，间隔内后一条为「答」），
+在之后有人说出相同或相似的问题时，按答案权重随机抽一条学到的回答接话。
 
-# Supports
+> 本项目是为 AstrBot（aiocqhttp 平台）重写的实现，不是原项目的直接打包；
+> 功能与交互参考原项目，代码按 AstrBot 插件规范重新组织。
 
-- [AstrBot Repo](https://github.com/AstrBotDevs/AstrBot)
-- [AstrBot Plugin Development Docs (Chinese)](https://docs.astrbot.app/dev/star/plugin-new.html)
-- [AstrBot Plugin Development Docs (English)](https://docs.astrbot.app/en/dev/star/plugin-new.html)
+## 功能
+
+- **记录问答**：词库链间隔内（默认 900 秒）的连续消息自动组成 问 -> 答，文本与图片原样保存
+- **自动回复**：命中问题后按答案权重随机回复，支持回复概率、每群独立概率、冷却时间、随机等待
+- **阈值**：每个答案有出现次数权重；可按消息类型设置回复阈值
+- **相似度匹配**：jieba 分词 + 词频余弦，阀值可调，用于近似问题的兜底匹配
+- **正则问题**：可把某个问题设为正则表达式，按内容匹配
+- **群管理**：记录群/回复群分别开关，群标签（支持中文）、不录入总词库的群、群内子管理员
+- **全局模式**：按标签词库或总词库回复，总词库定时由各分群词库合成
+- **过滤**：过滤词（模糊/精确）、敏感词 + 黑名单容错次数、按消息类型过滤
+- **管理模式**：私聊 bot 进入交互式管理，搜索/查看/按标记删除词库条目，维护过滤与黑名单，自动清理低频条目，添加自定义问答
+- **快速删除**：引用机器人消息发送 `!d`（或 `!d 2`），把刚才的回复从词库中删掉
+
+## 安装
+
+1. 将本目录放到 `AstrBot/data/plugins/astrbot_plugin_chat_learning`
+2. 在 WebUI 插件页重载插件（依赖会自动安装）
+3. 在插件配置里填写 **Administrator**（管理员 QQ），或私聊 bot 发送 `!setadmin <你的QQ>` 完成初始化
+
+> 可选依赖 `jieba`：用于余弦相似度匹配。未安装时插件仍可运行，相似度匹配会退化为字符二元组。
+
+## 快速开始
+
+1. 私聊 bot 发送 `!add learnings <群号>`：同时开启该群的记录与回复
+2. 发送 `!learning` 开启记录（或在插件配置里打开）
+3. 让群友正常聊天，积累词库
+4. 发送 `!reply` 开启回复
+5. 发送 `!check` 查看词库规模与设置
+
+指令前缀为 `!` 或 `！`，仅管理员私聊 bot 可用（群内子管理员可用少量指令）。
+
+## 指令
+
+| 指令 | 说明 |
+| --- | --- |
+| `help` / `?` | 指令表 |
+| `check` | 词库问答数量与全部设置 |
+| `grouplist` | 各群开关状态 |
+| `learning` | 开启/关闭记录 |
+| `learning <秒>` | 设置词库链间隔 |
+| `reply` / `reply <百分比>` | 开关回复 / 设置回复概率 |
+| `reply -s <百分比> <群号...>` / `reply -d <群号...>` | 设置/移除指定群概率 |
+| `replywait <基准> <浮动>` | 回复前随机等待 |
+| `replycd <秒>` | 回复冷却 |
+| `replylength <字数>` | 答案最大长度 |
+| `cosmatch` / `cosmatch <0-1>` | 相似度匹配开关 / 阈值 |
+| `globe` | 全局模式开关 |
+| `merge <秒>` | 总词库合成间隔 |
+| `typefreq <类型> <次数>` | 按消息类型的回复阈值 |
+| `settemp <条数>` | 每群消息缓存条数 |
+| `blackfreq <次数>` | 黑名单容错次数 |
+| `setadmin <QQ...>` | 设置管理员 |
+| `setbotname <昵称...>` | bot 昵称（答案中 `{me}` 使用） |
+| `atreply` | 被 @ 时是否直接回复 |
+| `fastdelete` | 快速删除权限 |
+| `add learning/learnings/reply <群号...>` | 添加记录群/记录+回复群/回复群 |
+| `add tag <标签> <群号...>` | 给群加标签（可多个，支持中文） |
+| `add unmerge <群号...>` | 该群不录入总词库 |
+| `add subadmin <群号> [QQ...]` | 设置群内子管理员 |
+| `remove learning/reply/unmerge/subadmin/tag <群号...>` | 移除 |
+| `admin` | 进入交互式管理模式 |
+
+群内子管理员指令：`!learning`、`!reply`、`!reply <概率>`、`!admin`。
+
+## 工作原理
+
+- **记录**：群消息通过过滤/敏感词检查后，与同群上一条消息按时间间隔配对：
+  间隔超过 `interval` 时该消息成为新的「问」；否则它既是「问」，也是上一条问题的「答」。
+- **回复**：选择词库（分群 / 标签 / 总词库）→ 精确匹配 → 正则匹配 → 余弦相似度兜底；
+  过滤低于类型阈值的答案后按权重随机抽取，检查概率、冷却、长度与过滤规则后发送。
+- **合并**：后台定时把各分群词库合并为 `Merge`（跳过带标签的群和不录入的群），并为每个标签生成独立词库。
+
+## 数据目录
+
+```
+data/plugin_data/astrbot_plugin_chat_learning/
+├── config.json          # 运行时配置（指令修改后写入，仅保存与默认值不同的项）
+├── filter.json          # 过滤词 / 敏感词 / 黑名单
+├── images/              # 学到的图片（按 sha1 去重）
+└── wordstock/
+    ├── <群号>.json      # 分群词库
+    ├── Merge.json       # 总词库
+    └── <标签>.json      # 标签词库
+```
+
+词库为可读 JSON，每个问题包含出现次数、记录时间、是否正则以及答案列表（含权重与时间）。
+
+## 与原版的差异
+
+- 仅支持 aiocqhttp 平台，消息只保留 **文本 + 图片**（@、表情、引用等不记录）
+- 去掉依赖作者服务器的 **文字转语音**、**定时任务**、**Excel 导入导出** 功能
+- 命令风格为「单行指令 + 交互式管理模式」混合，不再是控制台 TUI
+- 词库使用 JSON，不再兼容原版 `.cl` pickle 文件
+- 新增：`{me}` / `{name}` / `{segment}` 占位符沿用原版语义；修复了原版答案文本含花括号会抛异常的问题
+
+## 开发与测试
+
+```bash
+python tests/test_core.py               # 核心逻辑（学习/回复/过滤/合并/管理模式/指令）
+python tests/test_plugin_integration.py # 带 AstrBot 桩模块的事件路由端到端测试
+```
+
+## 致谢
+
+- 功能与交互参考 [ChatLearning](https://github.com/JHue58/ChatLearning)（作者 JHue58）
+- 插件框架： [AstrBot](https://github.com/AstrBotDevs/AstrBot)

@@ -311,6 +311,107 @@ def test_maintenance(service):
     check("维护：记录合并时间", service.last_merge_at is not None)
 
 
+def test_groups(config, stocks, service):
+    stock = stocks.get("1001")
+    stock.record_question(text("群列表专用问题"))
+    stock.save()
+    payload = service.groups_payload()
+    names = {item["group"] for item in payload["groups"]}
+    check("群列表：包含已配置群", {"1001", "1002"} <= names)
+    entry = next(item for item in payload["groups"] if item["group"] == "1001")
+    check("群列表：记录状态", entry["learning"] is True)
+    check("群列表：词库统计", entry["has_wordstock"] and entry["questions"] >= 1)
+    check("群列表：总数", payload["totals"]["groups"] == len(payload["groups"]))
+    service.save_group(
+        {
+            "group": "1003",
+            "learning": True,
+            "reply": False,
+            "unmerge": False,
+            "tags": ["新标签"],
+            "subadmins": [],
+        }
+    )
+    check("群列表：新增记录群", config.has_group("learning", "1003"))
+    check("群列表：新增标签", config.tag_dict().get("1003") == ["新标签"])
+    check("群列表：标签建议", "新标签" in service.groups_payload()["tags"])
+    service.save_group({"group": "1003", "reply": True})
+    check(
+        "群列表：局部更新保留字段",
+        config.has_group("learning", "1003") and config.has_group("reply", "1003"),
+    )
+    service.save_group({"group": "1003", "subadmins": ["20001", "20002"]})
+    check("群列表：子管理员", config.get("subadmin").get("1003") == ["20001", "20002"])
+    service.save_group(
+        {
+            "group": "1003",
+            "tags": [],
+            "subadmins": [],
+            "learning": False,
+            "reply": True,
+        }
+    )
+    check("群列表：清空标签", "1003" not in config.tag_dict())
+    expect_error(
+        "群列表：至少保留一项",
+        service.save_group,
+        {
+            "group": "1003",
+            "learning": False,
+            "reply": False,
+            "unmerge": False,
+            "tags": [],
+            "subadmins": [],
+        },
+        contains="至少",
+    )
+    expect_error(
+        "群列表：非法群号",
+        service.save_group,
+        {"group": "abc", "learning": True},
+        contains="数字",
+    )
+    expect_error(
+        "群列表：非法标签",
+        service.save_group,
+        {"group": "1003", "tags": ["a/b"]},
+        contains="文件名",
+    )
+    expect_error(
+        "群列表：非法子管理员",
+        service.save_group,
+        {"group": "1003", "subadmins": ["abc"]},
+        contains="子管理员",
+    )
+    expect_error(
+        "群列表：数字标签",
+        service.save_group,
+        {"group": "1003", "tags": ["12345"]},
+        contains="纯数字",
+    )
+    service.save_group({"group": "1001", "tags": ["摸鱼"]})
+    check("群列表：标签立即重建", stocks.path_for("摸鱼").exists())
+    service.save_group({"group": "1001", "tags": []})
+    check("群列表：取消标签重建", not stocks.path_for("摸鱼").exists())
+    service.save_group({"group": "1004", "learning": True})
+    removed = service.remove_group({"group": "1004"})
+    check(
+        "群列表：移除配置",
+        removed["removed"] == "1004"
+        and not config.has_group("learning", "1004"),
+    )
+    check("群列表：删除词库前存在", stocks.path_for("1002").exists())
+    result = service.remove_group({"group": "1002", "delete_wordstock": True})
+    check(
+        "群列表：删除词库",
+        result["wordstock_deleted"] and not stocks.path_for("1002").exists(),
+    )
+    check(
+        "群列表：删除后隐藏",
+        all(item["group"] != "1002" for item in service.groups_payload()["groups"]),
+    )
+
+
 def main() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         config, stocks, filters, service = setup(tmp)
@@ -321,6 +422,7 @@ def main() -> None:
         test_config(service)
         test_backup_restore(config, stocks, service)
         test_maintenance(service)
+        test_groups(config, stocks, service)
     print(f"全部通过：{len(PASSED)} 项")
     for name in PASSED:
         print("  ✓", name)

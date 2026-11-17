@@ -122,7 +122,7 @@ def main():
         context = FakeContext()
         register_dashboard_web_apis(context, service)
         routes = {route: handler for route, handler, methods, desc in context.routes}
-        check("注册：路由数量", len(context.routes) == 14)
+        check("注册：路由数量", len(context.routes) == 17)
         check(
             "注册：路由前缀",
             all(
@@ -179,6 +179,40 @@ def main():
             )
         )
         check("接口：业务错误转 400", bad["kind"] == "error" and bad["status"] == 400)
+        groups = asyncio.run(call("/astrbot_plugin_chat_learning/dashboard/groups"))
+        check(
+            "接口：群列表",
+            groups["kind"] == "json"
+            and groups["data"]["groups"][0]["group"] == "1001",
+        )
+        group_saved = asyncio.run(
+            call(
+                "/astrbot_plugin_chat_learning/dashboard/groups/save",
+                body={"group": "1002", "learning": True, "tags": ["测试"]},
+            )
+        )
+        check(
+            "接口：保存群配置",
+            group_saved["kind"] == "json" and config.has_group("learning", "1002"),
+        )
+        group_removed = asyncio.run(
+            call(
+                "/astrbot_plugin_chat_learning/dashboard/groups/remove",
+                body={"group": "1002", "delete_wordstock": True},
+            )
+        )
+        check(
+            "接口：移除群配置",
+            group_removed["kind"] == "json"
+            and not config.has_group("learning", "1002"),
+        )
+        bad_group = asyncio.run(
+            call(
+                "/astrbot_plugin_chat_learning/dashboard/groups/save",
+                body={"group": "abc", "learning": True},
+            )
+        )
+        check("接口：群号校验", bad_group["kind"] == "error")
         backup = asyncio.run(call("/astrbot_plugin_chat_learning/dashboard/backup"))
         check(
             "接口：下载备份",

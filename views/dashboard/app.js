@@ -10,6 +10,9 @@ const state = {
   wordstockGroup: "",
   wordstockQuery: "",
   wordstockPage: 1,
+  groupsData: null,
+  groupsQuery: "",
+  editingGroup: null,
   pollTimer: null,
   dirty: false,
   backup: null,
@@ -173,6 +176,7 @@ function selectTab(tab) {
 
 function loadTab(tab) {
   if (tab === "status") return loadOverview(false);
+  if (tab === "groups") return loadGroups();
   if (tab === "wordstock") return loadWordstock();
   if (tab === "filters") return loadFilters();
   if (tab === "settings") return loadConfig();
@@ -345,6 +349,279 @@ function showLogs(logs) {
   const box = byId("maintenance-log");
   box.hidden = false;
   box.textContent = (logs || []).join("\n") || "没有输出";
+}
+
+/* ---------------- 群列表页 ---------------- */
+
+async function loadGroups() {
+  const data = await withError(() => apiGet("dashboard/groups"), "加载群列表失败");
+  if (!data) return;
+  state.groupsData = data;
+  renderGroups(data);
+}
+
+function groupMatches(entry, query) {
+  if (!query) return true;
+  const haystack = [entry.group, entry.tags.join(" "), entry.subadmins.join(" ")]
+    .join(" ")
+    .toLowerCase();
+  return haystack.indexOf(query) !== -1;
+}
+
+function renderGroups(data) {
+  const options = byId("group-tag-options");
+  clear(options);
+  (data.tags || []).forEach((tag) => {
+    const option = document.createElement("option");
+    option.value = tag;
+    options.appendChild(option);
+  });
+  setText("groups-hint", "共 " + data.totals.groups + " 个群");
+  const query = state.groupsQuery.trim().toLowerCase();
+  const groups = data.groups.filter((entry) => groupMatches(entry, query));
+  setText(
+    "groups-count",
+    "记录 " + data.totals.learning + " · 回复 " + data.totals.reply
+  );
+  const body = byId("groups-body");
+  clear(body);
+  const wrap = document.querySelector("#panel-groups .table-wrap");
+  const empty = byId("groups-empty");
+  if (!groups.length) {
+    wrap.hidden = true;
+    empty.hidden = false;
+    setText("groups-empty", query ? "没有匹配的群。" : "还没有群配置，右侧添加。");
+    return;
+  }
+  wrap.hidden = false;
+  empty.hidden = true;
+  groups.forEach((entry) => body.appendChild(buildGroupRow(entry)));
+}
+
+function buildGroupRow(entry) {
+  const row = document.createElement("tr");
+  const nameCell = document.createElement("td");
+  nameCell.appendChild(node("div", "group-name", "群 " + entry.group));
+  nameCell.appendChild(
+    node(
+      "div",
+      "q-meta",
+      entry.has_wordstock
+        ? entry.questions + " 问 · " + entry.answers + " 答"
+        : "暂无词库"
+    )
+  );
+  row.appendChild(nameCell);
+  row.appendChild(switchCell(groupSwitch(entry, "learning")));
+  row.appendChild(switchCell(groupSwitch(entry, "reply")));
+  row.appendChild(buildGroupTagsCell(entry));
+  row.appendChild(switchCell(groupSwitch(entry, "unmerge")));
+  row.appendChild(buildSubadminsCell(entry));
+
+  const stockCell = document.createElement("td");
+  stockCell.className = "num";
+  if (entry.has_wordstock) {
+    stockCell.appendChild(
+      makeButton(entry.questions + " / " + entry.answers, "btn tiny ghost", () =>
+        openWordstock(entry.group)
+      )
+    );
+  } else {
+    stockCell.appendChild(node("span", "muted", "—"));
+  }
+  row.appendChild(stockCell);
+
+  const actionCell = document.createElement("td");
+  const actions = node("div", "group-actions");
+  actions.appendChild(makeButton("编辑", "btn tiny", () => editGroup(entry)));
+  actions.appendChild(
+    makeButton("移除", "btn tiny danger ghost", () => removeGroupConfig(entry))
+  );
+  if (entry.has_wordstock) {
+    actions.appendChild(
+      makeButton("删词库", "btn tiny danger ghost", () =>
+        removeGroupConfig(entry, true)
+      )
+    );
+  }
+  actionCell.appendChild(actions);
+  row.appendChild(actionCell);
+  return row;
+}
+
+function switchCell(input) {
+  const cell = document.createElement("td");
+  cell.appendChild(input);
+  return cell;
+}
+
+function groupSwitch(entry, field) {
+  const label = node("label", "switch");
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = Boolean(entry[field]);
+  const labels = { learning: "记录", reply: "回复", unmerge: "不合并" };
+  input.setAttribute("aria-label", labels[field] + "群 " + entry.group);
+  input.addEventListener("change", () => {
+    saveGroupField(entry, { [field]: input.checked }, input);
+  });
+  label.appendChild(input);
+  label.appendChild(node("span", "switch-track"));
+  return label;
+}
+
+async function saveGroupField(entry, values, input) {
+  const payload = Object.assign({ group: entry.group }, values);
+  const data = await withError(
+    () => apiPost("dashboard/groups/save", payload),
+    "保存群配置失败"
+  );
+  if (!data) {
+    input.checked = !input.checked;
+    return;
+  }
+  toast("群配置已保存", "success");
+  await loadGroups();
+  await loadOverview(true);
+}
+
+function buildGroupTagsCell(entry) {
+  const cell = document.createElement("td");
+  if (!entry.tags.length) {
+    cell.appendChild(node("span", "muted", "—"));
+    return cell;
+  }
+  const chips = node("div", "chips");
+  entry.tags.forEach((tag) => {
+    const chip = node("span", "tag-chip");
+    chip.appendChild(node("span", "", tag));
+    const remove = node("button", "", "×");
+    remove.type = "button";
+    remove.title = "移除标签 " + tag;
+    remove.addEventListener("click", () => removeGroupTag(entry, tag));
+    chip.appendChild(remove);
+    chips.appendChild(chip);
+  });
+  cell.appendChild(chips);
+  return cell;
+}
+
+async function removeGroupTag(entry, tag) {
+  const tags = entry.tags.filter((item) => item !== tag);
+  const data = await withError(
+    () =>
+      apiPost("dashboard/groups/save", { group: entry.group, tags: tags }),
+    "移除标签失败"
+  );
+  if (data) {
+    toast("标签已移除", "success");
+    await loadGroups();
+    await loadOverview(true);
+  }
+}
+
+function buildSubadminsCell(entry) {
+  const cell = document.createElement("td");
+  if (!entry.subadmins.length) {
+    cell.appendChild(node("span", "muted", "—"));
+    return cell;
+  }
+  const box = node("div", "subadmins");
+  entry.subadmins.slice(0, 3).forEach((member) => {
+    box.appendChild(node("span", "subadmin-chip", member));
+  });
+  if (entry.subadmins.length > 3) {
+    box.appendChild(
+      node("span", "subadmin-chip", "+" + (entry.subadmins.length - 3))
+    );
+  }
+  cell.appendChild(box);
+  return cell;
+}
+
+function openWordstock(group) {
+  state.wordstockGroup = group;
+  state.wordstockQuery = "";
+  state.wordstockPage = 1;
+  selectTab("wordstock");
+}
+
+function editGroup(entry) {
+  state.editingGroup = entry.group;
+  const idInput = byId("group-id");
+  idInput.value = entry.group;
+  idInput.disabled = true;
+  byId("group-learning").checked = entry.learning;
+  byId("group-reply").checked = entry.reply;
+  byId("group-unmerge").checked = entry.unmerge;
+  byId("group-tags").value = entry.tags.join(" ");
+  byId("group-subadmins").value = entry.subadmins.join(" ");
+  setText("group-form-title", "编辑群 " + entry.group);
+  byId("group-cancel").hidden = false;
+  document.querySelector("#panel-groups .group-editor").scrollIntoView({
+    behavior: "smooth",
+    block: "nearest",
+  });
+}
+
+function resetGroupForm() {
+  state.editingGroup = null;
+  const form = byId("group-form");
+  form.reset();
+  byId("group-id").disabled = false;
+  byId("group-learning").checked = true;
+  byId("group-reply").checked = true;
+  byId("group-unmerge").checked = false;
+  byId("group-tags").value = "";
+  byId("group-subadmins").value = "";
+  setText("group-form-title", "添加群");
+  byId("group-cancel").hidden = true;
+}
+
+async function submitGroupForm(event) {
+  event.preventDefault();
+  const payload = {
+    group: byId("group-id").value.trim(),
+    learning: byId("group-learning").checked,
+    reply: byId("group-reply").checked,
+    unmerge: byId("group-unmerge").checked,
+    tags: splitList(byId("group-tags").value),
+    subadmins: splitList(byId("group-subadmins").value),
+  };
+  const data = await withError(
+    () => apiPost("dashboard/groups/save", payload),
+    "保存群配置失败"
+  );
+  if (!data) return;
+  toast(state.editingGroup ? "群配置已更新" : "群已保存", "success");
+  resetGroupForm();
+  await loadGroups();
+  await loadOverview(true);
+}
+
+async function removeGroupConfig(entry, deleteWordstock) {
+  const message = deleteWordstock
+    ? "将删除该群的全部词库数据并移除群配置，操作不可恢复。"
+    : "将移除该群的记录/回复/标签/子管理员配置，不会删除已学到的词库。";
+  const ok = await confirmAction(
+    deleteWordstock ? "删除群词库" : "移除群配置",
+    message,
+    deleteWordstock ? "确认删除" : "确认移除"
+  );
+  if (!ok) return;
+  const data = await withError(
+    () =>
+      apiPost("dashboard/groups/remove", {
+        group: entry.group,
+        delete_wordstock: Boolean(deleteWordstock),
+      }),
+    "移除失败"
+  );
+  if (!data) return;
+  toast(deleteWordstock ? "群词库已删除" : "群配置已移除", "success");
+  if (state.editingGroup === entry.group) resetGroupForm();
+  await loadGroups();
+  await loadOverview(true);
 }
 
 /* ---------------- 词库页 ---------------- */
@@ -920,6 +1197,13 @@ function bindEvents() {
       await loadOverview(true);
     }
   });
+  byId("open-groups").addEventListener("click", () => selectTab("groups"));
+  byId("groups-query").addEventListener("input", (event) => {
+    state.groupsQuery = event.target.value;
+    if (state.groupsData) renderGroups(state.groupsData);
+  });
+  byId("group-form").addEventListener("submit", submitGroupForm);
+  byId("group-cancel").addEventListener("click", resetGroupForm);
   byId("wordstock-group").addEventListener("change", (event) => {
     state.wordstockGroup = event.target.value;
     state.wordstockPage = 1;
@@ -1044,8 +1328,12 @@ async function start() {
   } catch (error) {
     setText("hero-sub", "页面桥接初始化失败");
   }
+  setConn("online", "已连接");
   bindEvents();
-  selectTab("status");
+  const params = new URLSearchParams(window.location.search);
+  const requested = params.get("tab");
+  const tabs = ["status", "groups", "wordstock", "filters", "settings", "backup"];
+  selectTab(tabs.indexOf(requested) !== -1 ? requested : "status");
 }
 
 start();

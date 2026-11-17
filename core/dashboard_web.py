@@ -86,6 +86,17 @@ def register_dashboard_web_apis(
         payload = _as_payload(await request.json(default={}))
         return await _reply(service.set_types, payload)
 
+    async def groups() -> Any:
+        return await _reply(service.groups_payload)
+
+    async def groups_save() -> Any:
+        payload = _as_payload(await request.json(default={}))
+        return await _reply_async(service.save_group, payload)
+
+    async def groups_remove() -> Any:
+        payload = _as_payload(await request.json(default={}))
+        return await _reply_async(service.remove_group, payload)
+
     async def config_get() -> Any:
         return await _reply(service.config_payload)
 
@@ -147,6 +158,19 @@ def register_dashboard_web_apis(
             filters_types,
             ["POST"],
             "ChatLearning 消息类型过滤",
+        ),
+        (f"{prefix}/dashboard/groups", groups, ["GET"], "ChatLearning 群列表"),
+        (
+            f"{prefix}/dashboard/groups/save",
+            groups_save,
+            ["POST"],
+            "ChatLearning 保存群配置",
+        ),
+        (
+            f"{prefix}/dashboard/groups/remove",
+            groups_remove,
+            ["POST"],
+            "ChatLearning 移除群配置",
         ),
         (f"{prefix}/dashboard/config", config_get, ["GET"], "ChatLearning 配置读取"),
         (

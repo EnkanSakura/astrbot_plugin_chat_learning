@@ -111,14 +111,11 @@ data/plugin_data/astrbot_plugin_chat_learning/
 在 AstrBot WebUI 的插件详情页打开 **群学习面板**，单页多标签，亮暗色跟随 WebUI：
 
 - **状态**：词库规模、记录/回复开关、运行信息、最近合并日志；可手动合并词库、清理低频条目
+- **群组**：群列表管理，开关记录/回复/不合并，增删标签与子管理员，移除群配置或删除群词库
 - **词库**：按群/标签/总词库切换，搜索问题或答案，分页浏览，删除问题/答案，直接调整答案权重
 - **过滤**：过滤词（模糊/精确）、敏感词、黑名单增删，按消息类型过滤
 - **设置**：回复、学习、匹配、安全等核心配置表单，保存后立即生效
 - **备份**：下载包含配置、过滤规则与词库的 JSON；导入时可选恢复范围与合并/覆盖方式，恢复前自动备份当前数据
-
-![群学习面板（浅色）](screenshots/dashboard-light.png)
-
-![群学习面板（深色）](screenshots/dashboard-dark.png)
 
 面板每 5 秒轮询状态页，其他标签切换时按需加载。开发预览时用任意静态服务器
 （例如 `python -m http.server`）打开 `views/dashboard/index.html?mock=1`，
@@ -132,14 +129,14 @@ data/plugin_data/astrbot_plugin_chat_learning/
 - 命令改为 AstrBot 标准指令组 `/cl <子指令>`（别名 `/chatlearning`），管理模式为交互式 `/cl admin`；不再使用原版的 `!指令` 与控制台 TUI
 - 词库使用 JSON，不再兼容原版 `.cl` pickle 文件
 - 新增：`{me}` / `{name}` / `{segment}` 占位符沿用原版语义；修复了原版答案文本含花括号会抛异常的问题
-- 新增：AstrBot WebUI 的「群学习面板」，用于状态查看、词库/过滤/配置管理与备份恢复
+- 新增：AstrBot WebUI 的「群学习面板」，用于状态查看、群列表/词库/过滤/配置管理与备份恢复
 
 ## 开发与测试
 
 ```bash
 python tests/test_core.py               # 核心逻辑（学习/回复/过滤/合并/管理模式/指令）
 python tests/test_plugin_integration.py # 带 AstrBot 桩模块的事件路由端到端测试
-python tests/test_dashboard.py          # 面板业务层（词库/过滤/配置/备份恢复）
+python tests/test_dashboard.py          # 面板业务层（群列表/词库/过滤/配置/备份恢复）
 python tests/test_dashboard_web.py      # 面板 Web API 注册与响应（桩模块）
 
 # 代码规范：ruff（配置见 pyproject.toml，与 AstrBot 主仓库一致）

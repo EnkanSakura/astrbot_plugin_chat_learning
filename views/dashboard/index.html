@@ -27,6 +27,7 @@
 
       <nav class="tabs" role="tablist" aria-label="面板分区">
         <button class="tab is-active" id="tab-status" data-tab="status" role="tab" aria-selected="true" aria-controls="panel-status">状态</button>
+        <button class="tab" id="tab-groups" data-tab="groups" role="tab" aria-selected="false" aria-controls="panel-groups">群组</button>
         <button class="tab" id="tab-wordstock" data-tab="wordstock" role="tab" aria-selected="false" aria-controls="panel-wordstock">词库</button>
         <button class="tab" id="tab-filters" data-tab="filters" role="tab" aria-selected="false" aria-controls="panel-filters">过滤</button>
         <button class="tab" id="tab-settings" data-tab="settings" role="tab" aria-selected="false" aria-controls="panel-settings">设置</button>
@@ -40,7 +41,10 @@
             <section class="card">
               <div class="card-head">
                 <h2>群词库</h2>
-                <span class="muted" id="stock-hint"></span>
+                <div class="head-actions">
+                  <span class="muted" id="stock-hint"></span>
+                  <button class="btn tiny" id="open-groups" type="button">管理群列表</button>
+                </div>
               </div>
               <div class="table-wrap">
                 <table class="table stock-table">
@@ -60,6 +64,59 @@
                 <button class="btn danger ghost" id="autodelete" type="button">清理低频条目</button>
               </div>
               <pre class="log" id="maintenance-log" hidden></pre>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-groups" role="tabpanel" aria-labelledby="tab-groups">
+          <div class="groups-layout">
+            <section class="card">
+              <div class="card-head">
+                <h2>群列表</h2>
+                <span class="muted" id="groups-hint"></span>
+              </div>
+              <div class="toolbar">
+                <input type="search" id="groups-query" placeholder="搜索群号或标签…" aria-label="搜索群" />
+                <span class="muted" id="groups-count"></span>
+              </div>
+              <div class="table-wrap">
+                <table class="table groups-table">
+                  <thead>
+                    <tr><th>群号</th><th>记录</th><th>回复</th><th>标签</th><th>不合并</th><th>子管理员</th><th class="num">词库</th><th>操作</th></tr>
+                  </thead>
+                  <tbody id="groups-body"></tbody>
+                </table>
+              </div>
+              <p class="empty" id="groups-empty" hidden>还没有群配置，右侧添加。</p>
+              <p class="scroll-hint">左右滑动查看完整表格</p>
+            </section>
+            <section class="card group-editor">
+              <div class="card-head"><h2 id="group-form-title">添加群</h2></div>
+              <form class="group-form" id="group-form">
+                <label class="field">
+                  <span>群号</span>
+                  <input id="group-id" inputmode="numeric" maxlength="12" placeholder="例如 123456789" required />
+                </label>
+                <div class="checks">
+                  <label class="check"><input type="checkbox" id="group-learning" checked />记录</label>
+                  <label class="check"><input type="checkbox" id="group-reply" checked />回复</label>
+                  <label class="check"><input type="checkbox" id="group-unmerge" />不合并</label>
+                </div>
+                <label class="field">
+                  <span>标签</span>
+                  <input id="group-tags" list="group-tag-options" placeholder="空格或逗号分隔，可留空" />
+                  <datalist id="group-tag-options"></datalist>
+                </label>
+                <label class="field">
+                  <span>子管理员 QQ</span>
+                  <input id="group-subadmins" placeholder="空格或逗号分隔，可留空" />
+                </label>
+                <p class="muted">保存后立即生效；改动标签或不合并会触发一次词库重建。</p>
+                <div class="group-form-actions">
+                  <button class="btn primary" type="submit">保存群配置</button>
+                  <button class="btn ghost" id="group-cancel" type="button" hidden>取消编辑</button>
+                </div>
+              </form>
             </section>
           </div>
         </section>

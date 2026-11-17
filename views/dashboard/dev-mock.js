@@ -76,6 +76,13 @@ const state = {
     types: ["Quote", "Poke"],
     supported_types: ["At", "AtAll", "Quote", "Poke", "Face", "Record", "Video", "File"],
   },
+  groupsConfig: {
+    learning: ["1001", "1002", "3001"],
+    reply: ["1001", "1002"],
+    unmerge: ["2001"],
+    tags: { "1001": ["摸鱼"], "1002": ["游戏"], "3001": ["测试"] },
+    subadmins: { "1001": ["20001"] },
+  },
   config: {
     fields: [
       { key: "learning", label: "开启记录", type: "bool", group: "开关", hint: "记录群消息并学习问答对", value: true },
@@ -145,11 +152,11 @@ function overview() {
       sendmode: Boolean(state.config.fields.find((f) => f.key === "sendmode").value),
       atreply: true,
       cosmatch: false,
-      learning_groups: ["1001", "1002"],
-      reply_groups: ["1001", "1002"],
-      unmerge_groups: ["2001"],
-      tags: { "1001": ["摸鱼"], "1002": ["游戏"] },
-      subadmin: { "1001": ["20001"] },
+      learning_groups: state.groupsConfig.learning.slice(),
+      reply_groups: state.groupsConfig.reply.slice(),
+      unmerge_groups: state.groupsConfig.unmerge.slice(),
+      tags: Object.assign({}, state.groupsConfig.tags),
+      subadmin: Object.assign({}, state.groupsConfig.subadmins),
       admins: ["10001"],
     },
     stocks,
@@ -167,6 +174,53 @@ function overview() {
       types: state.filters.types,
     },
     config_summary: {},
+  };
+}
+
+function groupsPayload() {
+  const config = state.groupsConfig;
+  const names = new Set([
+    ...config.learning,
+    ...config.reply,
+    ...config.unmerge,
+    ...Object.keys(config.tags),
+    ...Object.keys(config.subadmins),
+    ...Object.keys(state.wordstock),
+  ]);
+  const groups = Array.from(names)
+    .filter((name) => /^\d+$/.test(name))
+    .sort((left, right) => Number(left) - Number(right))
+    .map((name) => {
+      const items = state.wordstock[name] || [];
+      let answers = 0;
+      items.forEach((item) => { answers += item.answers.length; });
+      return {
+        group: name,
+        learning: config.learning.indexOf(name) !== -1,
+        reply: config.reply.indexOf(name) !== -1,
+        unmerge: config.unmerge.indexOf(name) !== -1,
+        tags: (config.tags[name] || []).slice(),
+        subadmins: (config.subadmins[name] || []).slice(),
+        questions: items.length,
+        answers,
+        has_wordstock: Boolean(state.wordstock[name]),
+      };
+    });
+  const tagSet = new Set();
+  Object.keys(config.tags).forEach((key) => {
+    config.tags[key].forEach((tag) => tagSet.add(tag));
+  });
+  return {
+    groups,
+    tags: Array.from(tagSet),
+    totals: {
+      groups: groups.length,
+      learning: groups.filter((item) => item.learning).length,
+      reply: groups.filter((item) => item.reply).length,
+      tagged: groups.filter((item) => item.tags.length).length,
+      unmerge: groups.filter((item) => item.unmerge).length,
+      subadmin: groups.filter((item) => item.subadmins.length).length,
+    },
   };
 }
 
@@ -202,6 +256,7 @@ function findQuestion(group, key) {
 
 function handleGet(path, params) {
   if (path === "dashboard/overview") return overview();
+  if (path === "dashboard/groups") return groupsPayload();
   if (path === "dashboard/wordstock") return wordstockPage(params || {});
   if (path === "dashboard/filters") return state.filters;
   if (path === "dashboard/config") return state.config;
@@ -230,6 +285,38 @@ async function handlePost(path, body) {
     if (!answer) throw new Error("答案不存在");
     answer.same = Number(body.same);
     return { same: answer.same };
+  }
+  if (path === "dashboard/groups/save") {
+    const group = String(body.group || "").trim();
+    if (!/^\d{4,12}$/.test(group)) throw new Error("群号必须是 4-12 位数字");
+    const config = state.groupsConfig;
+    ["learning", "reply", "unmerge"].forEach((key) => {
+      if (typeof body[key] !== "boolean") return;
+      config[key] = config[key].filter((item) => item !== group);
+      if (body[key]) config[key].push(group);
+    });
+    if (Array.isArray(body.tags)) {
+      const tags = body.tags.map((tag) => String(tag).trim()).filter(Boolean);
+      if (tags.length) config.tags[group] = tags;
+      else delete config.tags[group];
+    }
+    if (Array.isArray(body.subadmins)) {
+      const members = body.subadmins.map((item) => String(item).trim()).filter(Boolean);
+      if (members.length) config.subadmins[group] = members;
+      else delete config.subadmins[group];
+    }
+    return { saved: group };
+  }
+  if (path === "dashboard/groups/remove") {
+    const group = String(body.group || "").trim();
+    const config = state.groupsConfig;
+    ["learning", "reply", "unmerge"].forEach((key) => {
+      config[key] = config[key].filter((item) => item !== group);
+    });
+    delete config.tags[group];
+    delete config.subadmins[group];
+    if (body.delete_wordstock) delete state.wordstock[group];
+    return { removed: group, wordstock_deleted: Boolean(body.delete_wordstock) };
   }
   if (path === "dashboard/filters/add") {
     if (body.kind === "filter") {

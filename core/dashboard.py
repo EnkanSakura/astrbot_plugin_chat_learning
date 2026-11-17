@@ -521,6 +521,228 @@ class DashboardService:
         self.filters.set_types(types)
         return {"types": types}
 
+    # ---- 群列表管理 -------------------------------------------------
+    @staticmethod
+    def _group_id(value: Any) -> str:
+        if not isinstance(value, str) or not value.strip().isdigit():
+            raise DashboardError("群号必须是纯数字")
+        group = value.strip()
+        if not 4 <= len(group) <= 12:
+            raise DashboardError("群号长度应为 4-12 位")
+        return group
+
+    @staticmethod
+    def _clean_tags(raw: Any) -> list[str]:
+        if not isinstance(raw, list):
+            raise DashboardError("标签必须是数组")
+        tags: list[str] = []
+        for item in raw:
+            if not isinstance(item, str):
+                raise DashboardError("标签必须是文本")
+            tag = item.strip()
+            if not tag:
+                continue
+            if len(tag) > 32:
+                raise DashboardError("单个标签不能超过 32 个字符")
+            if tag.startswith(".") or any(char in '/\\:*?"<>|' for char in tag):
+                raise DashboardError(f"标签「{tag}」包含不能用于文件名的字符")
+            if tag.isdigit():
+                raise DashboardError("标签不能是纯数字，避免与群词库重名")
+            if tag not in tags:
+                tags.append(tag)
+        if len(tags) > 10:
+            raise DashboardError("每个群最多设置 10 个标签")
+        return tags
+
+    @staticmethod
+    def _clean_member_ids(raw: Any, label: str, limit: int) -> list[str]:
+        if not isinstance(raw, list):
+            raise DashboardError(f"{label}必须是数组")
+        members: list[str] = []
+        for item in raw:
+            text = str(item).strip()
+            if not text:
+                continue
+            if not text.isdigit() or not 4 <= len(text) <= 12:
+                raise DashboardError(f"{label}必须是 4-12 位数字")
+            if text not in members:
+                members.append(text)
+        if len(members) > limit:
+            raise DashboardError(f"{label}最多 {limit} 个")
+        return members
+
+    def _group_entries(self) -> list[dict[str, Any]]:
+        learning = set(self.config.group_list("learning"))
+        reply = set(self.config.group_list("reply"))
+        unmerge = set(self.config.group_list("unmerge"))
+        tags = self.config.tag_dict()
+        subadmin = {
+            str(key): [str(item) for item in (value or [])]
+            for key, value in (self.config.get("subadmin") or {}).items()
+        }
+        stock_names = {name for name in self.stocks.names() if name.isdigit()}
+        names = {
+            name
+            for name in (
+                learning | reply | unmerge | set(tags) | set(subadmin) | stock_names
+            )
+            if name.isdigit()
+        }
+        entries: list[dict[str, Any]] = []
+        for name in sorted(names, key=int):
+            stock = self.stocks.get(name) if name in stock_names else None
+            questions, answers = stock.stats() if stock is not None else (0, 0)
+            entries.append(
+                {
+                    "group": name,
+                    "learning": name in learning,
+                    "reply": name in reply,
+                    "unmerge": name in unmerge,
+                    "tags": tags.get(name, []),
+                    "subadmins": subadmin.get(name, []),
+                    "questions": questions,
+                    "answers": answers,
+                    "has_wordstock": stock is not None,
+                }
+            )
+        return entries
+
+    def _cleanup_unused_tags(self, removed_tags: list[str]) -> None:
+        """删除已没有任何群使用的标签词库，避免面板里留下幽灵标签。"""
+        active = set(self.config.all_tags())
+        group_names = {name for name in self.stocks.names() if name.isdigit()}
+        for tag in removed_tags:
+            if tag in active or tag in group_names or tag == MERGE_STOCK:
+                continue
+            self.stocks.delete(tag)
+
+    def groups_payload(self) -> dict[str, Any]:
+        """返回群列表与每个群的记录/回复/标签/子管理员配置。"""
+        entries = self._group_entries()
+        return {
+            "groups": entries,
+            "tags": self.config.all_tags(),
+            "totals": {
+                "groups": len(entries),
+                "learning": sum(1 for item in entries if item["learning"]),
+                "reply": sum(1 for item in entries if item["reply"]),
+                "tagged": sum(1 for item in entries if item["tags"]),
+                "unmerge": sum(1 for item in entries if item["unmerge"]),
+                "subadmin": sum(1 for item in entries if item["subadmins"]),
+            },
+        }
+
+    def save_group(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """新增或更新一个群的配置；未提供的字段保持原值。"""
+        group = self._group_id(payload.get("group"))
+        for key, label in (
+            ("learning", "记录"),
+            ("reply", "回复"),
+            ("unmerge", "不合并"),
+        ):
+            if key in payload and not isinstance(payload[key], bool):
+                raise DashboardError(f"{label}开关必须是布尔值")
+        tags_supplied = "tags" in payload
+        tags = self._clean_tags(payload.get("tags")) if tags_supplied else None
+        members_supplied = "subadmins" in payload
+        members = (
+            self._clean_member_ids(payload.get("subadmins"), "子管理员", 20)
+            if members_supplied
+            else None
+        )
+        learning = (
+            bool(payload["learning"])
+            if "learning" in payload
+            else self.config.has_group("learning", group)
+        )
+        reply = (
+            bool(payload["reply"])
+            if "reply" in payload
+            else self.config.has_group("reply", group)
+        )
+        unmerge = (
+            bool(payload["unmerge"])
+            if "unmerge" in payload
+            else self.config.has_group("unmerge", group)
+        )
+        old_tags = self.config.tag_dict().get(group, [])
+        old_unmerge = self.config.has_group("unmerge", group)
+        current_tags = old_tags if tags is None else tags
+        subadmin_table = {
+            str(key): [str(item) for item in (value or [])]
+            for key, value in (self.config.get("subadmin") or {}).items()
+        }
+        current_members = (
+            subadmin_table.get(group, []) if members is None else members
+        )
+        if not any((learning, reply, unmerge, current_tags, current_members)):
+            raise DashboardError(
+                "请至少保留记录、回复、标签、子管理员或不合并中的一项"
+            )
+
+        for kind, enabled in (
+            ("learning", learning),
+            ("reply", reply),
+            ("unmerge", unmerge),
+        ):
+            if enabled:
+                self.config.add_groups(kind, [group])
+            else:
+                self.config.remove_groups(kind, [group])
+
+        tag_table = self.config.tag_dict()
+        if current_tags:
+            tag_table[group] = current_tags
+        else:
+            tag_table.pop(group, None)
+        self.config.set("tag", tag_table)
+
+        if current_members:
+            subadmin_table[group] = current_members
+        else:
+            subadmin_table.pop(group, None)
+        self.config.set("subadmin", subadmin_table)
+        self.config.save()
+
+        if current_tags != old_tags or unmerge != old_unmerge:
+            logs = rebuild_all(self.config, self.stocks)
+            self.mark_merged(logs)
+            self._cleanup_unused_tags(
+                [tag for tag in old_tags if tag not in current_tags]
+            )
+        return {"saved": group}
+
+    def remove_group(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """移除群的全部管理配置；可选同时删除该群词库。"""
+        group = self._group_id(payload.get("group"))
+        delete_wordstock = bool(payload.get("delete_wordstock"))
+        had_stock = group in self.stocks.names()
+        tag_table = self.config.tag_dict()
+        old_tags = tag_table.pop(group, None) or []
+        removed_tag = bool(old_tags)
+        removed_unmerge = group in self.config.group_list("unmerge")
+        for kind in ("learning", "reply", "unmerge"):
+            self.config.remove_groups(kind, [group])
+        self.config.set("tag", tag_table)
+        subadmin_table = dict(self.config.get("subadmin") or {})
+        subadmin_table.pop(group, None)
+        self.config.set("subadmin", subadmin_table)
+        chances = dict(self.config.get("singlereplychance") or {})
+        chances.pop(group, None)
+        self.config.set("singlereplychance", chances)
+        self.config.save()
+
+        if delete_wordstock:
+            self.stocks.delete(group)
+        if removed_tag or removed_unmerge:
+            logs = rebuild_all(self.config, self.stocks)
+            self.mark_merged(logs)
+            self._cleanup_unused_tags(old_tags)
+        return {
+            "removed": group,
+            "wordstock_deleted": bool(delete_wordstock and had_stock),
+        }
+
     # ---- 配置 -------------------------------------------------------
     def _config_value(self, field: dict[str, Any]) -> Any:
         value = self.config.get(field["key"], DEFAULTS.get(field["key"]))

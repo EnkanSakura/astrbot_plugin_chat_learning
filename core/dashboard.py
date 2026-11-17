@@ -246,9 +246,38 @@ class DashboardService:
         entries.sort(key=lambda item: (order[item["kind"]], item["name"]))
         return entries
 
+    def _overview_stocks(self) -> list[dict[str, Any]]:
+        """状态页词库表：包含已配置但还没有词库的群，以及标签/总词库。"""
+        entries: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in self._group_entries():
+            entries.append(
+                {
+                    "name": item["group"],
+                    "label": "群 " + item["group"],
+                    "kind": "group",
+                    "questions": item["questions"],
+                    "answers": item["answers"],
+                    "tags": item["tags"],
+                }
+            )
+            seen.add(item["group"])
+        for item in self._stock_entries():
+            if item["name"] in seen or item["kind"] not in {"tag", "merge"}:
+                continue
+            entries.append(item)
+
+        def sort_key(item: dict[str, Any]) -> tuple[int, Any]:
+            if item["kind"] == "group":
+                return (0, int(item["name"]))
+            return (1 if item["kind"] == "tag" else 2, item["name"])
+
+        entries.sort(key=sort_key)
+        return entries
+
     def overview(self) -> dict[str, Any]:
         """返回状态页所需的全部数据。"""
-        entries = self._stock_entries()
+        entries = self._overview_stocks()
         group_entries = [item for item in entries if item["kind"] == "group"]
         total_questions = sum(item["questions"] for item in entries)
         total_answers = sum(item["answers"] for item in entries)

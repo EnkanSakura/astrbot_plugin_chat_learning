@@ -113,19 +113,30 @@ const state = {
 const startedAt = Math.floor(Date.now() / 1000) - 18420;
 
 function stockEntries() {
-  return state.groups.map((group) => {
-    const items = state.wordstock[group.name] || [];
-    let answers = 0;
-    items.forEach((item) => { answers += item.answers.length; });
-    return {
-      name: group.name,
-      label: group.label,
-      kind: group.kind,
-      tags: group.tags || [],
-      questions: items.length,
-      answers,
-    };
-  });
+  const entries = groupsPayload().groups.map((group) => ({
+    name: group.group,
+    label: "群 " + group.group,
+    kind: "group",
+    tags: group.tags,
+    questions: group.questions,
+    answers: group.answers,
+  }));
+  state.groups
+    .filter((group) => group.kind !== "group")
+    .forEach((group) => {
+      const items = state.wordstock[group.name] || [];
+      let answers = 0;
+      items.forEach((item) => { answers += item.answers.length; });
+      entries.push({
+        name: group.name,
+        label: group.label,
+        kind: group.kind,
+        tags: [],
+        questions: items.length,
+        answers,
+      });
+    });
+  return entries;
 }
 
 function overview() {

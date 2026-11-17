@@ -340,6 +340,23 @@ def test_groups(config, stocks, service):
         "群列表：局部更新保留字段",
         config.has_group("learning", "1003") and config.has_group("reply", "1003"),
     )
+    overview = service.overview()
+    overview_entry = next(
+        (item for item in overview["stocks"] if item["name"] == "1003"), None
+    )
+    check(
+        "状态：新增群同步到词库表",
+        overview_entry is not None
+        and overview_entry["kind"] == "group"
+        and overview_entry["tags"] == ["新标签"],
+    )
+    check("状态：新增群同步记录列表", "1003" in overview["status"]["learning_groups"])
+    check("状态：新增群同步回复列表", "1003" in overview["status"]["reply_groups"])
+    service.save_group({"group": "1001", "tags": ["同步标签"], "reply": False})
+    overview = service.overview()
+    existing = next(item for item in overview["stocks"] if item["name"] == "1001")
+    check("状态：已有群标签同步", existing["tags"] == ["同步标签"])
+    check("状态：已有群回复同步", "1001" not in overview["status"]["reply_groups"])
     service.save_group({"group": "1003", "subadmins": ["20001", "20002"]})
     check("群列表：子管理员", config.get("subadmin").get("1003") == ["20001", "20002"])
     service.save_group(

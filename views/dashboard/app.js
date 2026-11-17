@@ -220,7 +220,7 @@ function renderStats(data) {
   clear(grid);
   const stats = [
     {
-      label: "群词库",
+      label: "群组",
       value: data.totals.groups,
       hint: data.totals.tag_stocks + " 个标签词库",
     },
@@ -269,6 +269,9 @@ function renderStockTable(data) {
     nameCell.className = "col-name";
     nameCell.appendChild(node("div", "", stock.label));
     nameCell.appendChild(node("div", "q-meta", stock.name));
+    if (stock.kind === "group" && !stock.questions && !stock.answers) {
+      nameCell.appendChild(node("div", "q-meta", "暂无词库"));
+    }
     row.appendChild(nameCell);
     row.appendChild(node("td", "num", stock.questions));
     row.appendChild(node("td", "num", stock.answers));

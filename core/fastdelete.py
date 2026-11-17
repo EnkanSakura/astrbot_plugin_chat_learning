@@ -1,4 +1,4 @@
-"""快速删除：!d / !delete / 引用回复删除机器人刚发的答案。"""
+"""快速删除：/cl d [序号] 或引用机器人消息后 /cl d，删除刚发的答案。"""
 
 from __future__ import annotations
 

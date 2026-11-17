@@ -52,16 +52,43 @@ def install_stubs() -> None:
         GROUP_MESSAGE = "GROUP"
         PRIVATE_MESSAGE = "PRIVATE"
 
-    def event_message_type(kind):
+    registered_commands: list[str] = []
+    registered_groups: list[str] = []
+
+    def event_message_type(kind, **kwargs):
         def decorator(func):
             return func
+
+        return decorator
+
+    class _Commandable:
+        def __init__(self, name, alias=None):
+            self.name = name
+            self.alias = alias or set()
+
+        def command(self, name=None, alias=None, **kwargs):
+            def decorator(func):
+                if name:
+                    registered_commands.append(name)
+                return func
+
+            return decorator
+
+    def command_group(name=None, alias=None, **kwargs):
+        def decorator(func):
+            if name:
+                registered_groups.append(name)
+            return _Commandable(name, alias)
 
         return decorator
 
     filter_mod = _module(
         "astrbot.api.event.filter",
         event_message_type=event_message_type,
+        command_group=command_group,
         EventMessageType=EventMessageType,
+        registered_commands=registered_commands,
+        registered_groups=registered_groups,
     )
 
     class AstrMessageEvent:
@@ -111,6 +138,19 @@ def install_stubs() -> None:
     astrbot.core = core_mod
     message_mod = _module("astrbot.core.message")
     core_mod.message = message_mod
+
+    star_pkg = _module("astrbot.core.star")
+    core_mod.star = star_pkg
+    star_filter_pkg = _module("astrbot.core.star.filter")
+    star_pkg.filter = star_filter_pkg
+
+    class GreedyStr(str):
+        pass
+
+    command_filter_mod = _module(
+        "astrbot.core.star.filter.command", GreedyStr=GreedyStr
+    )
+    star_filter_pkg.command = command_filter_mod
 
     class MessageChain:
         def __init__(self, chain=None):
@@ -193,23 +233,28 @@ def check(name: str, condition: bool, detail: str = "") -> None:
 
 async def scenario(plugin) -> None:
     # 1. 首次 setadmin 引导
-    event = FakeEvent("!setadmin 42")
-    await plugin.on_message(event)
+    lines = await plugin._admin_command("setadmin 42", FakeEvent("cl setadmin 42"))
     check("引导：管理员已设置", plugin.config.admins() == ["42"])
-    check("引导：有反馈消息", bool(event.sent))
+    check("引导：有反馈消息", bool(lines))
 
     # 2. 群管理
-    event = FakeEvent("!add learnings 100")
-    await plugin.on_message(event)
+    lines = await plugin._admin_command(
+        "add learnings 100", FakeEvent("cl add learnings 100")
+    )
     check("群管理：记录群", plugin.config.has_group("learning", "100"))
     check("群管理：回复群", plugin.config.has_group("reply", "100"))
+    check("群管理：有反馈", bool(lines))
 
     # 3. 打开记录并拒绝非管理员
-    await plugin.on_message(FakeEvent("!learning on"))
+    await plugin._admin_command("learning on", FakeEvent("cl learning on"))
     check("开关：记录已开启", plugin.config.as_bool("learning"))
-    stranger = FakeEvent("!reply on", sender_id="77")
-    await plugin.on_message(stranger)
-    check("权限：非管理员被忽略", not stranger.sent and not plugin.config.as_bool("reply"))
+    lines = await plugin._admin_command(
+        "reply on", FakeEvent("cl reply on", sender_id="77")
+    )
+    check(
+        "权限：非管理员被拒绝",
+        bool(lines) and "管理员" in lines[0] and not plugin.config.as_bool("reply"),
+    )
 
     # 4. 群内学习两条消息
     await plugin.on_message(FakeEvent("你好", group_id="100", sender_id="1", timestamp=1000))
@@ -238,16 +283,16 @@ async def scenario(plugin) -> None:
     )
 
     # 5. 关闭记录（避免待回答问题影响结果），打开回复并命中问题
-    await plugin.on_message(FakeEvent("!learning off"))
-    await plugin.on_message(FakeEvent("!reply on"))
-    await plugin.on_message(FakeEvent("!reply 100"))
+    await plugin._admin_command("learning off", FakeEvent("cl learning off"))
+    await plugin._admin_command("reply on", FakeEvent("cl reply on"))
+    await plugin._admin_command("reply 100", FakeEvent("cl reply 100"))
     event = FakeEvent("你好", group_id="100", sender_id="3", timestamp=1100)
     await plugin.on_message(event)
     check("回复：发送了答案", len(event.sent) == 1 and chain_text(event.sent[0]) == "你好呀")
     check("回复：阻止后续 LLM 处理", event.stopped)
 
     # 5b. 图片问题命中（同一张图片按 sha1 匹配；先等冷却）
-    await plugin.on_message(FakeEvent("!replycd 1"))
+    await plugin._admin_command("replycd 1", FakeEvent("cl replycd 1"))
     await asyncio.sleep(1.05)
     image_copy = Path(plugin.data_dir) / "copy.png"
     image_copy.write_bytes(image_source.read_bytes())
@@ -272,15 +317,13 @@ async def scenario(plugin) -> None:
     check("回复：未命中不发送", not event.sent and not event.stopped)
 
     # 7. check 指令
-    event = FakeEvent("!check")
-    await plugin.on_message(event)
-    text = "\n".join(chain_text(chain) for chain in event.sent)
+    lines = await plugin._admin_command("check", FakeEvent("cl check"))
+    text = "\n".join(lines)
     check("指令：check 输出统计", "词库100" in text and "回复触发概率" in text)
 
-    # 8. 管理模式：搜索并删除
-    event = FakeEvent("!admin")
-    await plugin.on_message(event)
-    check("管理：进入模式", any("管理模式" in chain_text(chain) for chain in event.sent))
+    # 8. 管理模式：/cl admin 进入，之后用普通消息交互
+    lines = await plugin._admin_session_command(FakeEvent("cl admin"))
+    check("管理：进入模式", any("管理模式" in line for line in lines))
     await plugin.on_message(FakeEvent("1"))
     event = FakeEvent("你好")
     await plugin.on_message(event)
@@ -297,9 +340,54 @@ async def scenario(plugin) -> None:
 
     # 9. 先退出管理模式，再执行指令
     await plugin.on_message(FakeEvent("0"))
-    event = FakeEvent("!blackfreq 7")
-    await plugin.on_message(event)
+    await plugin._admin_command("blackfreq 7", FakeEvent("cl blackfreq 7"))
     check("指令：blackfreq 生效", plugin.config.as_int("blackfreq") == 7)
+
+    # 10. 标准指令组：所有子指令都已注册
+    registered = set(sys.modules["astrbot.api.event.filter"].registered_commands)
+    expected = {
+        "help",
+        "check",
+        "grouplist",
+        "learning",
+        "reply",
+        "replywait",
+        "replycd",
+        "replylength",
+        "cosmatch",
+        "globe",
+        "merge",
+        "typefreq",
+        "settemp",
+        "blackfreq",
+        "setadmin",
+        "setbotname",
+        "atreply",
+        "fastdelete",
+        "add",
+        "remove",
+        "admin",
+        "delete",
+    }
+    check("指令组：子指令全部注册", expected <= registered)
+
+    filter_module = sys.modules["astrbot.api.event.filter"]
+    check("指令组：注册为 cl 指令组", "cl" in filter_module.registered_groups)
+
+    import inspect
+
+    params = list(inspect.signature(plugin.cl_learning).parameters.values())
+    check(
+        "指令组：learning 使用 GreedyStr 且无默认值",
+        params[-1].name == "args"
+        and params[-1].default is inspect.Parameter.empty,
+    )
+
+    help_text = sys.modules["astrbot_plugin_chat_learning.core.commands"].HELP_TEXT
+    check(
+        "指令组：帮助文本为 /cl 格式",
+        "/cl learning" in help_text and "!learning" not in help_text,
+    )
 
 
 async def main() -> None:

@@ -20,58 +20,63 @@
 - **全局模式**：按标签词库或总词库回复，总词库定时由各分群词库合成
 - **过滤**：过滤词（模糊/精确）、敏感词 + 黑名单容错次数、按消息类型过滤
 - **管理模式**：私聊 bot 进入交互式管理，搜索/查看/按标记删除词库条目，维护过滤与黑名单，自动清理低频条目，添加自定义问答
-- **快速删除**：引用机器人消息发送 `!d`（或 `!d 2`），把刚才的回复从词库中删掉
+- **快速删除**：发送 `/cl d`，或引用机器人消息后发送 `/cl d`（`/cl d 2` 删除倒数第二条），把刚才的回复从词库中删掉
 
 ## 安装
 
 1. 将本目录放到 `AstrBot/data/plugins/astrbot_plugin_chat_learning`
 2. 在 WebUI 插件页重载插件（依赖会自动安装）
-3. 在插件配置里填写 **Administrator**（管理员 QQ），或私聊 bot 发送 `!setadmin <你的QQ>` 完成初始化
+3. 在插件配置里填写 **Administrator**（管理员 QQ），或私聊 bot 发送 `/cl setadmin <你的QQ>` 完成初始化
 
 > 可选依赖 `jieba`：用于余弦相似度匹配。未安装时插件仍可运行，相似度匹配会退化为字符二元组。
 
 ## 快速开始
 
-1. 私聊 bot 发送 `!add learnings <群号>`：同时开启该群的记录与回复
-2. 发送 `!learning` 开启记录（或在插件配置里打开）
+1. 私聊 bot 发送 `/cl add learnings <群号>`：同时开启该群的记录与回复
+2. 发送 `/cl learning` 开启记录（或在插件配置里打开）
 3. 让群友正常聊天，积累词库
-4. 发送 `!reply` 开启回复
-5. 发送 `!check` 查看词库规模与设置
+4. 发送 `/cl reply` 开启回复
+5. 发送 `/cl check` 查看词库规模与设置
 
-指令前缀为 `!` 或 `！`，仅管理员私聊 bot 可用（群内子管理员可用少量指令）。
+群聊里需要先 @bot 或加唤醒前缀（AstrBot 默认 `/`）；私聊可直接发送 `cl ...` 或 `/cl ...`。
+管理类指令仅 bot 管理员可用，群内子管理员可用本群开关/概率与 `/cl admin`。
 
 ## 指令
 
+指令组为 `/cl`（别名 `/chatlearning`），完整指令名可在 AstrBot 的指令管理中查看。
+
 | 指令 | 说明 |
 | --- | --- |
-| `help` / `?` | 指令表 |
-| `check` | 词库问答数量与全部设置 |
-| `grouplist` | 各群开关状态 |
-| `learning` | 开启/关闭记录 |
-| `learning <秒>` | 设置词库链间隔 |
-| `reply` / `reply <百分比>` | 开关回复 / 设置回复概率 |
-| `reply -s <百分比> <群号...>` / `reply -d <群号...>` | 设置/移除指定群概率 |
-| `replywait <基准> <浮动>` | 回复前随机等待 |
-| `replycd <秒>` | 回复冷却 |
-| `replylength <字数>` | 答案最大长度 |
-| `cosmatch` / `cosmatch <0-1>` | 相似度匹配开关 / 阈值 |
-| `globe` | 全局模式开关 |
-| `merge <秒>` | 总词库合成间隔 |
-| `typefreq <类型> <次数>` | 按消息类型的回复阈值 |
-| `settemp <条数>` | 每群消息缓存条数 |
-| `blackfreq <次数>` | 黑名单容错次数 |
-| `setadmin <QQ...>` | 设置管理员 |
-| `setbotname <昵称...>` | bot 昵称（答案中 `{me}` 使用） |
-| `atreply` | 被 @ 时是否直接回复 |
-| `fastdelete` | 快速删除权限 |
-| `add learning/learnings/reply <群号...>` | 添加记录群/记录+回复群/回复群 |
-| `add tag <标签> <群号...>` | 给群加标签（可多个，支持中文） |
-| `add unmerge <群号...>` | 该群不录入总词库 |
-| `add subadmin <群号> [QQ...]` | 设置群内子管理员 |
-| `remove learning/reply/unmerge/subadmin/tag <群号...>` | 移除 |
-| `admin` | 进入交互式管理模式 |
+| `/cl help` / `/cl ?` | 指令表 |
+| `/cl check` | 词库问答数量与全部设置 |
+| `/cl grouplist` | 各群开关状态 |
+| `/cl learning` | 开启/关闭记录（群内：开关本群） |
+| `/cl learning <秒>` | 设置词库链间隔 |
+| `/cl reply` | 开启/关闭回复（群内：开关本群） |
+| `/cl reply <百分比>` | 设置回复概率（群内：设置本群概率） |
+| `/cl reply -s <百分比> <群号...>` / `/cl reply -d <群号...>` | 设置/移除指定群概率 |
+| `/cl replywait <基准> <浮动>` | 回复前随机等待 |
+| `/cl replycd <秒>` | 回复冷却 |
+| `/cl replylength <字数>` | 答案最大长度 |
+| `/cl cosmatch` / `/cl cosmatch <0-1>` | 相似度匹配开关 / 阈值 |
+| `/cl globe` | 全局模式开关 |
+| `/cl merge <秒>` | 总词库合成间隔 |
+| `/cl typefreq <类型> <次数>` | 按消息类型的回复阈值 |
+| `/cl settemp <条数>` | 每群消息缓存条数 |
+| `/cl blackfreq <次数>` | 黑名单容错次数 |
+| `/cl setadmin <QQ...>` | 设置管理员 |
+| `/cl setbotname <昵称...>` | bot 昵称（答案中 `{me}` 使用） |
+| `/cl atreply` | 被 @ 时是否直接回复 |
+| `/cl fastdelete` | 快速删除权限 |
+| `/cl add learning/learnings/reply <群号...>` | 添加记录群/记录+回复群/回复群 |
+| `/cl add tag <标签> <群号...>` | 给群加标签（可多个，支持中文） |
+| `/cl add unmerge <群号...>` | 该群不录入总词库 |
+| `/cl add subadmin <群号> [QQ...]` | 设置群内子管理员 |
+| `/cl remove learning/reply/unmerge/subadmin/tag <群号...>` | 移除 |
+| `/cl admin` | 进入交互式管理模式 |
+| `/cl d [序号]` | 删除机器人刚发的回复 |
 
-群内子管理员指令：`!learning`、`!reply`、`!reply <概率>`、`!admin`。
+群内子管理员指令：`/cl learning`、`/cl reply`、`/cl reply <概率>`、`/cl admin`
 
 ## 工作原理
 
@@ -100,7 +105,7 @@ data/plugin_data/astrbot_plugin_chat_learning/
 
 - 仅支持 aiocqhttp 平台，消息只保留 **文本 + 图片**（@、表情、引用等不记录）
 - 去掉依赖作者服务器的 **文字转语音**、**定时任务**、**Excel 导入导出** 功能
-- 命令风格为「单行指令 + 交互式管理模式」混合，不再是控制台 TUI
+- 命令改为 AstrBot 标准指令组 `/cl <子指令>`（别名 `/chatlearning`），管理模式为交互式 `/cl admin`；不再使用原版的 `!指令` 与控制台 TUI
 - 词库使用 JSON，不再兼容原版 `.cl` pickle 文件
 - 新增：`{me}` / `{name}` / `{segment}` 占位符沿用原版语义；修复了原版答案文本含花括号会抛异常的问题
 

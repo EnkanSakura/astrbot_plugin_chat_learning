@@ -14,13 +14,16 @@ from .storage import read_json, write_json
 
 DEFAULT_TYPES = ["At", "AtAll", "Quote", "Poke", "Face", "Record", "Video", "File"]
 
+# 与指令重名的纯文本消息不进入词库（标准指令本身会在事件层被跳过）
 COMMAND_GUARD = {
-    "!learning",
+    "cl",
+    "chatlearning",
     "learning",
-    "!reply",
     "reply",
-    "!admin",
     "admin",
+    "!learning",
+    "!reply",
+    "!admin",
     "!d",
     "！d",
     "!delete",

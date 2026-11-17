@@ -27,43 +27,42 @@ SUPPORTED_TYPES = [
     "File",
 ]
 
-HELP_TEXT = """ChatLearning 指令表（管理员私聊 bot，指令前加 ! 或 ！）
+HELP_TEXT = """ChatLearning 指令表（AstrBot 标准指令组；群聊需先 @bot 或使用唤醒前缀，如 /cl help）
 ==== 基本 ====
-help / ?            查看本指令表
-check               查看词库问答个数与属性设置
-grouplist           查看各群开关状态
-learning            开启/关闭记录
-learning <秒>       设置词库链间隔时间
-reply               开启/关闭回复
-reply <百分比>      设置回复概率
-reply -s <百分比> <群号...>  为指定群设置回复概率
-reply -d <群号...>           移除指定群的回复概率
-replywait <基准> <浮动>      设置回复等待时间（秒）
-replycd <秒>        设置回复冷却时间
-replylength <字数>  设置答案最大长度
-cosmatch            开启/关闭问题余弦相似度计算
-cosmatch <匹配率>   设置相似度阈值（0-1）
-globe               开启/关闭全局模式
-merge <秒>          设置总词库合成间隔
-typefreq <类型> <次数>  设置某类消息的回复阈值
-settemp <条数>      设置单群消息缓存条数
-blackfreq <次数>    设置黑名单容错次数
-setadmin <QQ...>    设置管理员
-setbotname <昵称...> 设置 bot 昵称
-atreply             开启/关闭艾特回复
-fastdelete          设置快速删除权限（所有人/仅管理员）
+/cl help                    查看本指令表
+/cl check                   查看词库问答个数与属性设置
+/cl grouplist               查看各群开关状态
+/cl learning                开启/关闭记录（群内：开关本群）
+/cl learning <秒>           设置词库链间隔时间
+/cl reply                   开启/关闭回复（群内：开关本群）
+/cl reply <百分比>          设置回复概率（群内：设置本群概率）
+/cl reply -s <百分比> <群号...>  为指定群设置回复概率
+/cl reply -d <群号...>           移除指定群的回复概率
+/cl replywait <基准> <浮动>      设置回复等待时间（秒）
+/cl replycd <秒>            设置回复冷却时间
+/cl replylength <字数>      设置答案最大长度
+/cl cosmatch                开启/关闭问题余弦相似度计算
+/cl cosmatch <匹配率>       设置相似度阈值（0-1）
+/cl globe                   开启/关闭全局模式
+/cl merge <秒>              设置总词库合成间隔
+/cl typefreq <类型> <次数>  设置某类消息的回复阈值
+/cl settemp <条数>          设置单群消息缓存条数
+/cl blackfreq <次数>        设置黑名单容错次数
+/cl setadmin <QQ...>        设置管理员
+/cl setbotname <昵称...>    设置 bot 昵称
+/cl atreply                 开启/关闭艾特回复
+/cl fastdelete              设置快速删除权限（所有人/仅管理员）
 ==== 群管理 ====
-add learning <群号...>     添加记录群
-add learnings <群号...>    同时添加记录与回复群
-add reply <群号...>        添加回复群
-add tag <标签> <群号...>   为群添加标签（可多个，支持中文）
-add unmerge <群号...>      该群不录入总词库
-add subadmin <群号> [QQ...] 设置可自主管理本群的成员
-remove learning|reply|unmerge|subadmin|tag <群号...>
+/cl add learning <群号...>     添加记录群
+/cl add learnings <群号...>    同时添加记录与回复群
+/cl add reply <群号...>        添加回复群
+/cl add tag <标签> <群号...>   为群添加标签（可多个，支持中文）
+/cl add unmerge <群号...>      该群不录入总词库
+/cl add subadmin <群号> [QQ...] 设置可自主管理本群的成员
+/cl remove learning|reply|unmerge|subadmin|tag <群号...>
 ==== 维护 ====
-admin               进入管理模式（交互式搜索/删除/过滤/清理）
-!d / !delete        删除机器人刚才的回复（需引用该消息或加序号 !d 1）"""
-
+/cl admin                   进入管理模式（交互式搜索/删除/过滤/清理）
+/cl d [序号]                删除机器人刚才的回复（可引用该消息）"""
 
 @dataclass
 class CommandContext:
@@ -139,30 +138,8 @@ class CommandService:
         name, args = split_command(text)
         handler = self._handlers.get(name)
         if handler is None:
-            return [f'未知指令"{name}"，请输入help查看帮助']
+            return [f'未知指令"{name}"，请输入 /cl help 查看帮助']
         return await handler(args, ctx)
-
-    async def handle_group(self, text: str, group_id: str, sender_id: str) -> list[str]:
-        """群内子管理员指令。"""
-        name, args = split_command(text)
-        if name == "learning":
-            enabled = self.config.toggle_group("learning", group_id)
-            self.config.save()
-            return ["已开启本群记录" if enabled else "已关闭本群记录"]
-        if name == "reply":
-            if args:
-                chance = to_int(args)
-                if chance is None or chance < 0 or chance > 100:
-                    return ["参数错误，回复概率应为 0-100"]
-                table = dict(self.config.get("singlereplychance") or {})
-                table[str(group_id)] = chance
-                self.config.set("singlereplychance", table)
-                self.config.save()
-                return [f"已设置本群回复概率{chance}%"]
-            enabled = self.config.toggle_group("reply", group_id)
-            self.config.save()
-            return ["已开启本群回复" if enabled else "已关闭本群回复"]
-        return [f'未知指令"{name}"，本群管理员可用指令：!learning、!reply、!reply <概率>、!admin']
 
     # ---- 基础信息 ---------------------------------------------------
     async def _cmd_help(self, args: str, ctx: CommandContext) -> list[str]:

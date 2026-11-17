@@ -2,6 +2,8 @@
 
 移植自 MiraiConsole 插件 ChatLearning（https://github.com/JHue58/ChatLearning），
 适配 AstrBot + aiocqhttp：记录群里的问答对，在合适的时候用学到的答案回复。
+
+管理指令统一使用 AstrBot 标准指令组：/cl <子指令>（别名 /chatlearning）。
 """
 
 from __future__ import annotations
@@ -17,9 +19,10 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.message_components import At, Plain
 from astrbot.api.star import Context, Star, StarTools
 from astrbot.core.message.message_event_result import MessageChain
+from astrbot.core.star.filter.command import GreedyStr
 
 from .core.admin import GROUP_MENU_TEXT, MENU_TEXT, AdminSession
-from .core.commands import CommandContext, CommandService
+from .core.commands import HELP_TEXT, CommandContext, CommandService
 from .core.config import DEFAULTS, PluginConfig
 from .core.fastdelete import FastDeleteService, ReplyCache
 from .core.filtering import FilterStore
@@ -29,10 +32,15 @@ from .core.message_io import ImageStore, MessageCodec
 from .core.models import content_preview
 from .core.reply import ReplyEngine
 from .core.storage import StockManager
-from .core.utils import split_command, strip_command_prefix, to_int
+from .core.utils import split_command, to_int
 
 PLUGIN_NAME = "astrbot_plugin_chat_learning"
-COMMAND_PREFIXES = ("!", "！")
+COMMAND_GROUP_NAMES = ("cl", "chatlearning")
+NO_PERMISSION_TEXT = (
+    "该指令仅 bot 管理员可用。可在插件配置的 Administrator 中填写，"
+    "或私聊 bot 发送 /cl setadmin <你的QQ>"
+)
+GROUP_ONLY_TEXT = "该指令只能在群聊中使用"
 
 
 @dataclass
@@ -81,7 +89,7 @@ class ChatLearningPlugin(Star):
         if not self.config.admins():
             logger.warning(
                 "ChatLearning 尚未设置管理员，请在 WebUI 插件配置的 Administrator 中填写，"
-                "或私聊 bot 发送 !setadmin <QQ号> 完成初始化"
+                "或私聊 bot 发送 /cl setadmin <QQ号> 完成初始化"
             )
         self._merge_task = asyncio.create_task(self._merge_loop())
 
@@ -119,9 +127,154 @@ class ChatLearningPlugin(Star):
             except asyncio.CancelledError:
                 raise
 
-    # ---- 事件入口 ---------------------------------------------------
-    @filter.event_message_type(filter.EventMessageType.ALL)
+    # ---- 标准指令组 -------------------------------------------------
+    @filter.command_group("cl", alias={"chatlearning"})
+    def cl(self) -> None:
+        """ChatLearning 群学习：记录群问答并在合适的时候接话"""
+
+    @cl.command("help", alias={"?"})
+    async def cl_help(self, event: AstrMessageEvent):
+        """查看指令表"""
+        yield event.plain_result(HELP_TEXT)
+
+    @cl.command("check")
+    async def cl_check(self, event: AstrMessageEvent):
+        """查看词库统计与全部设置"""
+        for line in await self._admin_command("check", event):
+            yield event.plain_result(line)
+
+    @cl.command("grouplist")
+    async def cl_grouplist(self, event: AstrMessageEvent):
+        """查看各群开关状态"""
+        for line in await self._admin_command("grouplist", event):
+            yield event.plain_result(line)
+
+    @cl.command("learning")
+    async def cl_learning(self, event: AstrMessageEvent, args: GreedyStr):
+        """开启/关闭记录；带秒数则设置词库链间隔；群内用于开关本群"""
+        for line in await self._learning_command(str(args), event):
+            yield event.plain_result(line)
+
+    @cl.command("reply")
+    async def cl_reply(self, event: AstrMessageEvent, args: GreedyStr):
+        """开启/关闭回复；带百分比设置概率；群内设置本群概率"""
+        for line in await self._reply_command(str(args), event):
+            yield event.plain_result(line)
+
+    @cl.command("replywait")
+    async def cl_replywait(self, event: AstrMessageEvent, args: GreedyStr):
+        """设置回复前的随机等待：<基准秒> <浮动秒>"""
+        for line in await self._admin_command(f"replywait {args}", event):
+            yield event.plain_result(line)
+
+    @cl.command("replycd")
+    async def cl_replycd(self, event: AstrMessageEvent, args: GreedyStr):
+        """设置每个群的回复冷却时间（秒）"""
+        for line in await self._admin_command(f"replycd {args}", event):
+            yield event.plain_result(line)
+
+    @cl.command("replylength")
+    async def cl_replylength(self, event: AstrMessageEvent, args: GreedyStr):
+        """设置单条答案文本的最大字数"""
+        for line in await self._admin_command(f"replylength {args}", event):
+            yield event.plain_result(line)
+
+    @cl.command("cosmatch")
+    async def cl_cosmatch(self, event: AstrMessageEvent, args: GreedyStr):
+        """开启/关闭余弦相似度匹配；带 0-1 数值则设置阈值"""
+        for line in await self._admin_command(f"cosmatch {args}", event):
+            yield event.plain_result(line)
+
+    @cl.command("globe")
+    async def cl_globe(self, event: AstrMessageEvent):
+        """开启/关闭全局模式"""
+        for line in await self._admin_command("globe", event):
+            yield event.plain_result(line)
+
+    @cl.command("merge")
+    async def cl_merge(self, event: AstrMessageEvent, args: GreedyStr):
+        """设置总词库合成间隔（秒）"""
+        for line in await self._admin_command(f"merge {args}", event):
+            yield event.plain_result(line)
+
+    @cl.command("typefreq")
+    async def cl_typefreq(self, event: AstrMessageEvent, args: GreedyStr):
+        """设置某类消息的回复阈值：<类型> <次数>"""
+        for line in await self._admin_command(f"typefreq {args}", event):
+            yield event.plain_result(line)
+
+    @cl.command("settemp")
+    async def cl_settemp(self, event: AstrMessageEvent, args: GreedyStr):
+        """设置单群消息缓存条数"""
+        for line in await self._admin_command(f"settemp {args}", event):
+            yield event.plain_result(line)
+
+    @cl.command("blackfreq")
+    async def cl_blackfreq(self, event: AstrMessageEvent, args: GreedyStr):
+        """设置黑名单容错次数"""
+        for line in await self._admin_command(f"blackfreq {args}", event):
+            yield event.plain_result(line)
+
+    @cl.command("setadmin")
+    async def cl_setadmin(self, event: AstrMessageEvent, args: GreedyStr):
+        """设置管理员 QQ（多个用空格隔开）"""
+        for line in await self._admin_command(f"setadmin {args}", event):
+            yield event.plain_result(line)
+
+    @cl.command("setbotname")
+    async def cl_setbotname(self, event: AstrMessageEvent, args: GreedyStr):
+        """设置 bot 昵称（答案中的 {me} 会使用）"""
+        for line in await self._admin_command(f"setbotname {args}", event):
+            yield event.plain_result(line)
+
+    @cl.command("atreply")
+    async def cl_atreply(self, event: AstrMessageEvent):
+        """开启/关闭艾特回复"""
+        for line in await self._admin_command("atreply", event):
+            yield event.plain_result(line)
+
+    @cl.command("fastdelete")
+    async def cl_fastdelete(self, event: AstrMessageEvent):
+        """快速删除权限：所有人 / 仅管理员"""
+        for line in await self._admin_command("fastdelete", event):
+            yield event.plain_result(line)
+
+    @cl.command("add")
+    async def cl_add(self, event: AstrMessageEvent, args: GreedyStr):
+        """添加记录/回复群、标签、不录入总词库的群、子管理员"""
+        for line in await self._admin_command(f"add {args}", event):
+            yield event.plain_result(line)
+
+    @cl.command("remove")
+    async def cl_remove(self, event: AstrMessageEvent, args: GreedyStr):
+        """移除记录/回复群、标签、不录入总词库的群、子管理员"""
+        for line in await self._admin_command(f"remove {args}", event):
+            yield event.plain_result(line)
+
+    @cl.command("admin")
+    async def cl_admin(self, event: AstrMessageEvent):
+        """进入交互式管理模式"""
+        for line in await self._admin_session_command(event):
+            yield event.plain_result(line)
+
+    @cl.command("delete", alias={"d"})
+    async def cl_delete(self, event: AstrMessageEvent, args: GreedyStr):
+        """删除机器人刚发的回复；可带序号或引用该消息"""
+        for line in await self._fast_delete_command(str(args), event):
+            yield event.plain_result(line)
+
+    # ---- 消息监听（学习与回复） -------------------------------------
+    @filter.event_message_type(filter.EventMessageType.ALL, priority=-1)
     async def on_message(self, event: AstrMessageEvent) -> None:
+        if self._is_command_event(event):
+            return
+        if self._is_unknown_group_command(event):
+            if not getattr(event, "_has_send_oper", False):
+                await self._send_chain(
+                    event, self._text_chain("未知子指令，发送 /cl help 查看指令表")
+                )
+            event.stop_event()
+            return
         try:
             deliveries = await self._dispatch(event)
         except Exception:  # noqa: BLE001 - 单条消息失败不影响后续
@@ -153,7 +306,6 @@ class ChatLearningPlugin(Star):
             )
         return await self._handle_private(event, sender_id, text, content)
 
-    # ---- 群消息 -----------------------------------------------------
     async def _handle_group(
         self,
         event: AstrMessageEvent,
@@ -175,58 +327,29 @@ class ChatLearningPlugin(Star):
                     self.sessions.pop(session_key, None)
                 return [Delivery(self._text_chain(line)) for line in outputs if line]
 
-        subadmins = [
-            str(item)
-            for item in ((self.config.get("subadmin") or {}).get(group_id) or [])
-        ]
-        is_subadmin = sender_id in subadmins
-
-        if text.startswith(COMMAND_PREFIXES):
-            name, args = split_command(strip_command_prefix(text))
-            if name in ("d", "delete"):
-                return await self._handle_fast_delete(event, group_id, sender_id, args)
-            if is_subadmin and name == "admin":
-                self.sessions[session_key] = AdminSession(
-                    self.config,
-                    self.stocks,
-                    self.filters,
-                    self.commands,
-                    scope_group=group_id,
-                )
-                return [Delivery(self._text_chain(GROUP_MENU_TEXT))]
-            if is_subadmin and name in ("learning", "reply"):
-                outputs = await self.commands.handle_group(text, group_id, sender_id)
-                return [Delivery(self._text_chain(line)) for line in outputs if line]
-            return []
-
         await self.learning.on_group_message(
             group_id, content, raw_types, sender_id, timestamp
         )
         return await self._maybe_reply(event, group_id, sender_id, content)
 
-    async def _handle_fast_delete(
+    async def _handle_private(
         self,
         event: AstrMessageEvent,
-        group_id: str,
         sender_id: str,
-        args: str,
+        text: str,
+        content: list[dict],
     ) -> list[Delivery]:
-        if not self.fastdelete.allowed(sender_id):
-            return []
-        target: str | None = None
-        index = to_int(args)
-        if index is not None and index > 0:
-            ok, message, target = self.fastdelete.delete_nth(group_id, index)
-        else:
-            quote_id = self._quote_id(event)
-            if quote_id:
-                ok, message = self.fastdelete.delete(group_id, quote_id)
-                target = quote_id
+        session_key = f"private:{sender_id}"
+        session = self.sessions.get(session_key)
+        if session is not None:
+            if session.closed:
+                self.sessions.pop(session_key, None)
             else:
-                ok, message, target = self.fastdelete.delete_nth(group_id, 1)
-        if ok and target:
-            await self._recall(event, target)
-        return [Delivery(self._text_chain(message))]
+                outputs = await session.feed(text, content)
+                if session.closed:
+                    self.sessions.pop(session_key, None)
+                return [Delivery(self._text_chain(line)) for line in outputs if line]
+        return []
 
     async def _maybe_reply(
         self,
@@ -290,64 +413,133 @@ class ChatLearningPlugin(Star):
             )
         ]
 
-    # ---- 私聊 -------------------------------------------------------
-    async def _handle_private(
-        self,
-        event: AstrMessageEvent,
-        sender_id: str,
-        text: str,
-        content: list[dict],
-    ) -> list[Delivery]:
-        session_key = f"private:{sender_id}"
-        session = self.sessions.get(session_key)
-        if session is not None:
-            if session.closed:
-                self.sessions.pop(session_key, None)
+    # ---- 指令实现 ---------------------------------------------------
+    async def _admin_command(self, line: str, event: AstrMessageEvent) -> list[str]:
+        sender_id = str(event.get_sender_id() or "")
+        line = (line or "").strip()
+        if not self._is_admin(sender_id):
+            command_name = split_command(line)[0]
+            if command_name == "setadmin" and not self.config.admins():
+                logger.warning("ChatLearning: 首次初始化管理员 %s", sender_id)
             else:
-                outputs = await session.feed(text, content)
-                if session.closed:
-                    self.sessions.pop(session_key, None)
-                return [Delivery(self._text_chain(line)) for line in outputs if line]
-
-        if not text.startswith(COMMAND_PREFIXES):
-            return []
-        body = strip_command_prefix(text)
-        name, _args = split_command(body)
-        is_admin = self._is_admin(sender_id)
-
-        if name == "setadmin" and not self.config.admins():
-            logger.warning("ChatLearning: 首次初始化管理员 %s", sender_id)
-            outputs = await self.commands.handle(
-                body, self._command_context(event, sender_id, is_admin=True)
-            )
-            return [Delivery(self._text_chain(line)) for line in outputs if line]
-
-        if not is_admin:
-            return []
-
-        if name == "admin":
-            self.sessions[session_key] = AdminSession(
-                self.config, self.stocks, self.filters, self.commands
-            )
-            return [Delivery(self._text_chain(MENU_TEXT))]
-
-        outputs = await self.commands.handle(
-            body, self._command_context(event, sender_id, is_admin=True)
+                return [NO_PERMISSION_TEXT]
+        if not line:
+            return [HELP_TEXT]
+        return await self.commands.handle(
+            line, self._command_context(event, sender_id, is_admin=True)
         )
-        return [Delivery(self._text_chain(line)) for line in outputs if line]
 
-    def _command_context(
-        self, event: AstrMessageEvent, sender_id: str, is_admin: bool
-    ) -> CommandContext:
-        return CommandContext(
-            sender_id=sender_id,
-            sender_name=event.get_sender_name() or "",
-            is_admin=is_admin,
-            is_private=True,
-            event=event,
+    async def _learning_command(
+        self, args: str, event: AstrMessageEvent
+    ) -> list[str]:
+        sender_id = str(event.get_sender_id() or "")
+        group_id = str(event.get_group_id() or "")
+        arg = (args or "").strip()
+        if group_id:
+            if not self._can_manage_group(group_id, sender_id):
+                return [NO_PERMISSION_TEXT]
+            if not arg:
+                enabled = self.config.toggle_group("learning", group_id)
+                self.config.save()
+                return ["已开启本群记录" if enabled else "已关闭本群记录"]
+            if not self._is_admin(sender_id):
+                return ["只有 bot 管理员可以设置全局词库链间隔"]
+            return await self._admin_command(f"learning {arg}", event)
+        return await self._admin_command(f"learning {arg}".strip(), event)
+
+    async def _reply_command(self, args: str, event: AstrMessageEvent) -> list[str]:
+        sender_id = str(event.get_sender_id() or "")
+        group_id = str(event.get_group_id() or "")
+        arg = (args or "").strip()
+        if group_id:
+            if not self._can_manage_group(group_id, sender_id):
+                return [NO_PERMISSION_TEXT]
+            if not arg:
+                enabled = self.config.toggle_group("reply", group_id)
+                self.config.save()
+                return ["已开启本群回复" if enabled else "已关闭本群回复"]
+            first = arg.split()[0]
+            if not first.startswith("-"):
+                chance = to_int(first)
+                if chance is None or chance < 0 or chance > 100:
+                    return ["参数错误，回复概率应为 0-100"]
+                table = dict(self.config.get("singlereplychance") or {})
+                table[str(group_id)] = chance
+                self.config.set("singlereplychance", table)
+                self.config.save()
+                return [f"已设置本群回复概率{chance}%"]
+            if self._is_admin(sender_id):
+                return await self._admin_command(f"reply {arg}", event)
+            return ["只有 bot 管理员可以修改全局回复配置"]
+        return await self._admin_command(f"reply {arg}".strip(), event)
+
+    async def _admin_session_command(self, event: AstrMessageEvent) -> list[str]:
+        sender_id = str(event.get_sender_id() or "")
+        group_id = str(event.get_group_id() or "")
+        if group_id:
+            if not self._can_manage_group(group_id, sender_id):
+                return [NO_PERMISSION_TEXT]
+            self.sessions[f"group:{group_id}:{sender_id}"] = AdminSession(
+                self.config,
+                self.stocks,
+                self.filters,
+                self.commands,
+                scope_group=group_id,
+            )
+            return [GROUP_MENU_TEXT]
+        if not self._is_admin(sender_id):
+            return [NO_PERMISSION_TEXT]
+        self.sessions[f"private:{sender_id}"] = AdminSession(
+            self.config, self.stocks, self.filters, self.commands
         )
+        return [MENU_TEXT]
+
+    async def _fast_delete_command(
+        self, args: str, event: AstrMessageEvent
+    ) -> list[str]:
+        group_id = str(event.get_group_id() or "")
+        sender_id = str(event.get_sender_id() or "")
+        if not group_id:
+            return [GROUP_ONLY_TEXT]
+        if not self.fastdelete.allowed(sender_id):
+            return ["快速删除仅管理员可用（可在插件配置中放开所有人）"]
+        target: str | None = None
+        index = to_int((args or "").strip())
+        if index is not None and index > 0:
+            ok, message, target = self.fastdelete.delete_nth(group_id, index)
+        else:
+            quote_id = self._quote_id(event)
+            if quote_id:
+                ok, message = self.fastdelete.delete(group_id, quote_id)
+                target = quote_id
+            else:
+                ok, message, target = self.fastdelete.delete_nth(group_id, 1)
+        if ok and target:
+            await self._recall(event, target)
+        return [message]
 
     # ---- 工具 -------------------------------------------------------
+    @staticmethod
+    def _is_unknown_group_command(event: AstrMessageEvent) -> bool:
+        """唤醒前缀后跟指令组名但没有匹配到子指令的消息。"""
+        if not getattr(event, "is_at_or_wake_command", False):
+            return False
+        text = (getattr(event, "message_str", "") or "").strip()
+        if not text:
+            return False
+        return text.split(maxsplit=1)[0] in COMMAND_GROUP_NAMES
+
+    @staticmethod
+    def _is_command_event(event: AstrMessageEvent) -> bool:
+        """判断这条消息是否命中了某个标准指令（命中时不再当作聊天学习）。"""
+        getter = getattr(event, "get_extra", None)
+        if not callable(getter):
+            return False
+        try:
+            return bool(getter("handlers_parsed_params"))
+        except Exception:  # noqa: BLE001 - 事件实现差异时按普通消息处理
+            return False
+
     def _seed(self) -> dict[str, Any]:
         return {
             key: value
@@ -375,6 +567,27 @@ class ChatLearningPlugin(Star):
             return str(sender_id) in [str(item) for item in admins]
         except Exception:  # noqa: BLE001
             return False
+
+    def _is_subadmin(self, group_id: str, sender_id: str) -> bool:
+        table = self.config.get("subadmin") or {}
+        members = table.get(str(group_id)) or []
+        return str(sender_id) in [str(item) for item in members]
+
+    def _can_manage_group(self, group_id: str, sender_id: str) -> bool:
+        return self._is_admin(sender_id) or self._is_subadmin(group_id, sender_id)
+
+    def _command_context(
+        self, event: AstrMessageEvent, sender_id: str, is_admin: bool
+    ) -> CommandContext:
+        group_id = str(event.get_group_id() or "")
+        return CommandContext(
+            sender_id=sender_id,
+            sender_name=event.get_sender_name() or "",
+            group_id=group_id,
+            is_admin=is_admin,
+            is_private=not group_id,
+            event=event,
+        )
 
     @staticmethod
     def _text_chain(text: str) -> MessageChain:

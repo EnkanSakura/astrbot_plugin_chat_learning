@@ -81,7 +81,7 @@
   },
   "Administrator": {
     "type": "list",
-    "description": "管理员 QQ 号列表，可私聊 bot 发送 !命令 进行管理",
+    "description": "管理员 QQ 号列表，可通过 /cl setadmin <QQ> 或在此处设置",
     "default": []
   }
 }

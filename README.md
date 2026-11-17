@@ -138,6 +138,7 @@ python tests/test_core.py               # 核心逻辑（学习/回复/过滤/�
 python tests/test_plugin_integration.py # 带 AstrBot 桩模块的事件路由端到端测试
 python tests/test_dashboard.py          # 面板业务层（群列表/词库/过滤/配置/备份恢复）
 python tests/test_dashboard_web.py      # 面板 Web API 注册与响应（桩模块）
+python tests/test_rounds.py             # 不同配置下的记录/回复轮次模拟（打印对照表）
 
 # 代码规范：ruff（配置见 pyproject.toml，与 AstrBot 主仓库一致）
 python -m ruff check .

@@ -229,6 +229,7 @@ def chain_text(chain) -> str:
 
 
 PASSED: list[str] = []
+ROUND_ROWS: list[tuple[str, str, str, str]] = []
 
 
 def check(name: str, condition: bool, detail: str = "") -> None:
@@ -459,6 +460,162 @@ async def scenario(plugin) -> None:
     )
 
 
+def seed_round_stock(plugin, group: str, question: str, answer: str) -> None:
+    from astrbot_plugin_chat_learning.core.models import content_key, text_segment
+
+    stock = plugin.stocks.get(group)
+    stock.record_question([text_segment(question)])
+    stock.record_answer(content_key([text_segment(question)]), [text_segment(answer)])
+    stock.save()
+
+
+async def feed_record(plugin, group: str, messages) -> int | None:
+    """返回第一次形成问答对的消息序号。"""
+    for index, (value, timestamp) in enumerate(messages, 1):
+        await plugin.on_message(
+            FakeEvent(value, group_id=group, sender_id="1", timestamp=timestamp)
+        )
+        if any(
+            question.answers
+            for _, question in plugin.stocks.get(group).iter_questions()
+        ):
+            return index
+    return None
+
+
+async def feed_reply(plugin, group: str, messages) -> int | None:
+    """返回第一次真正发送回复的消息序号。"""
+    for index, value in enumerate(messages, 1):
+        event = FakeEvent(
+            value,
+            group_id=group,
+            sender_id="1",
+            timestamp=1000 + index,
+        )
+        await plugin.on_message(event)
+        if event.sent:
+            return index
+    return None
+
+
+def add_round_row(scene: str, params: str, expected, actual) -> None:
+    ROUND_ROWS.append(
+        (
+            scene,
+            params,
+            "未触发" if expected is None else str(expected),
+            "未触发" if actual is None else str(actual),
+        )
+    )
+
+
+def print_round_table() -> None:
+    print("\n集成场景 -> 轮次对照")
+    print(f"{'场景':<28}{'参数':<38}{'期望':<24}{'实际':<24}")
+    print("-" * 114)
+    for scene, params, expected, actual in ROUND_ROWS:
+        print(f"{scene:<28}{params:<38}{expected:<24}{actual:<24}")
+
+
+async def rounds_scenario(plugin) -> None:
+    plugin.config.set("reply", 0)
+    plugin.config.set("learning", 1)
+    plugin.config.set("interval", 5)
+    plugin.config.add_groups("learning", ["300"])
+    plugin.config.save()
+    actual = await feed_record(plugin, "300", [("问", 0), ("答", 1)])
+    check("轮次-记录间隔内", actual == 2 and plugin.stocks.get("300").stats() == (2, 1))
+    add_round_row("集成-记录 间隔内", "interval=5, gap=1", 2, actual)
+
+    plugin.config.set("interval", 1)
+    plugin.config.add_groups("learning", ["301"])
+    actual = await feed_record(plugin, "301", [("问", 0), ("答", 2), ("尾", 3)])
+    check("轮次-记录首条超时", actual == 3)
+    add_round_row("集成-记录 首条超时", "interval=1, gap=2, gap=1", 3, actual)
+
+    plugin.config.add_groups("learning", ["304"])
+    actual = await feed_record(plugin, "304", [("新问", 0), ("新答", 1)])
+    check("轮次-记录新群继续生效", actual == 2)
+    actual = await feed_record(plugin, "303", [("问", 0), ("答", 1)])
+    check("轮次-记录未加入群", actual is None)
+    add_round_row("集成-记录 未加入群", "group=303 不在列表", None, actual)
+
+    plugin.config.set("learning", 0)
+    plugin.config.set("reply", 1)
+    plugin.config.set("replychance", 100)
+    plugin.config.set("replycd", 0)
+    plugin.config.add_groups("reply", ["310", "311", "312", "313"])
+    plugin.config.save()
+    seed_round_stock(plugin, "310", "你好", "你好呀")
+    actual = await feed_reply(plugin, "310", ["你好"])
+    check("轮次-回复首轮", actual == 1)
+    add_round_row("集成-回复 首轮", "chance=100, cd=0", 1, actual)
+
+    plugin.config.set("replycd", 60)
+    plugin.config.save()
+    plugin._cooldown.pop("310", None)
+    first = FakeEvent("你好", group_id="310", sender_id="1", timestamp=2000)
+    second = FakeEvent("你好", group_id="310", sender_id="1", timestamp=2001)
+    await plugin.on_message(first)
+    await plugin.on_message(second)
+    check("轮次-回复冷却中不发送", not second.sent)
+    plugin._cooldown["310"] -= 61
+    third = FakeEvent("你好", group_id="310", sender_id="1", timestamp=2002)
+    await plugin.on_message(third)
+    check(
+        "轮次-回复冷却到期再发送",
+        bool(first.sent) and not second.sent and bool(third.sent),
+    )
+    add_round_row("集成-回复 冷却", "replycd=60", "首次回复 / 冷却中不发 / 到期再回", "1 / 0 / 1")
+
+    At = sys.modules["astrbot.api.message_components"].At
+    Plain = sys.modules["astrbot.api.message_components"].Plain
+    seed_round_stock(plugin, "311", "在吗", "在的")
+    plugin.config.set("replychance", 0)
+    plugin.config.set("replycd", 0)
+    plugin.config.set("atreply", 0)
+    no_at = FakeEvent(
+        "在吗",
+        group_id="311",
+        sender_id="1",
+        timestamp=2100,
+        components=[At("999"), Plain("在吗")],
+    )
+    await plugin.on_message(no_at)
+    plugin.config.set("atreply", 1)
+    yes_at = FakeEvent(
+        "在吗",
+        group_id="311",
+        sender_id="1",
+        timestamp=2101,
+        components=[At("999"), Plain("在吗")],
+    )
+    await plugin.on_message(yes_at)
+    check("轮次-@回复开关", not no_at.sent and bool(yes_at.sent))
+    add_round_row("集成-回复 @开关", "replychance=0, atreply=0/1", "0 / 1", "0 / 1")
+
+    seed_round_stock(plugin, "312", "说句话", "这是一条非常长的答案内容")
+    plugin.config.set("replychance", 100)
+    plugin.config.set("replylength", 3)
+    blocked = FakeEvent("说句话", group_id="312", sender_id="1", timestamp=2200)
+    await plugin.on_message(blocked)
+    plugin.config.set("replylength", 100)
+    allowed = FakeEvent("说句话", group_id="312", sender_id="1", timestamp=2201)
+    await plugin.on_message(allowed)
+    check("轮次-答案长度限制", not blocked.sent and bool(allowed.sent))
+    add_round_row("集成-回复 长度限制", "replylength=3 / 100", "0 / 1", "0 / 1")
+
+    plugin.config.set("learning", 1)
+    plugin.config.set("interval", 60)
+    plugin.config.set("replylength", 100)
+    plugin.config.set("typefreq", {"Plain": 3})
+    plugin.config.add_groups("learning", ["313"])
+    plugin.config.save()
+    actual = await feed_reply(plugin, "313", ["问", "答", "问", "答", "问"])
+    check("轮次-回复 typefreq3", actual == 5)
+    add_round_row("集成-回复 typefreq", "Plain=3", 5, actual)
+
+
 async def main() -> None:
     install_stubs()
     sys.path.insert(0, str(PLUGINS_DIR))
@@ -470,7 +627,15 @@ async def main() -> None:
             sys.modules["astrbot.api.star"].Context(), config={}
         )
         await scenario(plugin)
-    print(f"全部通过：{len(PASSED)} 项")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        sys.modules["astrbot.api.star"].StarTools.data_root = tmp
+        rounds_plugin = main_mod.ChatLearningPlugin(
+            sys.modules["astrbot.api.star"].Context(), config={}
+        )
+        await rounds_scenario(rounds_plugin)
+    print_round_table()
+    print(f"\n全部通过：{len(PASSED)} 项")
     for name in PASSED:
         print("  ✓", name)
 
